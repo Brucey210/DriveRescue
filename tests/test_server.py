@@ -66,6 +66,19 @@ class ActionTests(AppCase):
         bad = self.call("POST", "plan", {"source": self.src, "dest": "/dev/fake-sdc1"})
         self.assertFalse(bad["ok"])
 
+    def test_unmounted_partition_smaller_than_the_source_is_refused_early(self):
+        def shrink(devs):
+            part = devs[1]["children"][0]
+            part["size"], part["mountpoints"] = 1024 * 1024, []
+        self.sys.tweak = shrink
+        p = self.call("POST", "plan", {"source": self.src, "dest": self.dst})
+        self.assertFalse(p["ok"])
+        self.assertIn("can't fit", " ".join(p["errors"]))
+
+    def test_unmounted_partition_big_enough_still_plans(self):
+        self.sys.tweak = lambda devs: devs[1]["children"][0].update(mountpoints=[])
+        self.assertTrue(self.call("POST", "plan", {"source": self.src, "dest": self.dst})["ok"])
+
     def test_start_refused_gives_errors(self):
         with self.assertRaises(server.ApiError) as cm:
             self.call("POST", "start", {"source": self.src, "dest": "/dev/fake-sdc1"})
@@ -116,6 +129,15 @@ class CloneApiTests(unittest.TestCase):
         self.assertTrue(p["ok"])
         self.assertEqual(p["dest_contents"][0]["name"], "Old stuff")
         self.assertNotIn("mapfile", p)
+
+    def test_warns_when_the_rescued_copy_is_saved_on_the_target(self):
+        self.app.plan = {"image": "/mnt/x/failing.img", "dest_drive": {"path": self.sys.dest_file}}
+        warned = " ".join(self.call("clone/plan", self.body)["warnings"])
+        self.assertIn("rescued copy", warned)
+        self.app.plan = {"image": "/mnt/x/failing.img", "dest_drive": {"path": "/dev/other"}}
+        self.assertNotIn("rescued copy", " ".join(self.call("clone/plan", self.body)["warnings"]))
+        self.app.plan = {"mode": "clone", "image": self.sys.dest_file, "dest_drive": {"path": self.sys.dest_file}}
+        self.assertNotIn("rescued copy", " ".join(self.call("clone/plan", self.body)["warnings"]))
 
     def test_start_needs_the_typed_confirmation(self):
         for word in ("", "yes", "erase me"):

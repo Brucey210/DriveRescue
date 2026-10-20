@@ -54,6 +54,10 @@ class FakeSystem(System):
         self.calls.append(("setro", path))
         return True, ""
 
+    def set_readwrite(self, path):
+        self.calls.append(("setrw", path))
+        return True, ""
+
     def umount(self, mountpoint):
         self.calls.append(("umount", mountpoint))
         return True, ""

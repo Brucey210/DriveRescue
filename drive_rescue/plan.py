@@ -109,6 +109,12 @@ def make_plan(system, source_path, dest_part_path, folder, opts=None, prepare=Tr
             return result
     else:
         mountpoint = next((m for m in dest_part["mountpoints"]), None)
+        if mountpoint is None and dest_part["size"] < source["size"] + SPACE_MARGIN:
+            # Not mounted yet, so free space can't be read, but a partition smaller than the failing
+            # drive can never hold the copy. Say so now rather than after the drive is opened.
+            errors.append(f"The healthy drive's partition ({dest_part['size_text']}) is smaller than the failing "
+                          f"drive ({source['size_text']}), so the copy can't fit. Pick a bigger one.")
+            return result
 
     base = image_basename(source)
     target_dir = os.path.join(mountpoint, result["folder"]) if mountpoint else None

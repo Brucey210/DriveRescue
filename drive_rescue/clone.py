@@ -289,6 +289,9 @@ class CloneJob(ImageJob):
         ok, err = self.system.set_readonly(src["path"])
         if not ok:
             self.message = f"Could not lock the source drive as read-only ({err}); copying reads only, never writes."
+        # A drive locked earlier in this session (as a failing source) would refuse the copy. The target
+        # has passed every check and the person has confirmed it will be erased.
+        self.system.set_readwrite(dst["path"])
         for drive in (src, dst):
             for part in drive["partitions"]:
                 for mp in part["mountpoints"]:

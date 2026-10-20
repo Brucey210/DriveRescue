@@ -159,6 +159,8 @@ class ImageJob:
         self._tail = ""
         self._proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                       start_new_session=True)
+        if self._want:  # Pause or Stop was pressed before the process existed; don't lose it
+            self._signal()
         fd = self._proc.stdout.fileno()
         while True:
             try:

@@ -240,12 +240,15 @@ def write_gpt(path, layout, parts, new_disk_sectors):
     ecrc = zlib.crc32(raw) & 0xFFFFFFFF
     backup_entries_lba = new_disk_sectors - 1 - esz
     first = h["first"]
+    # When the table was read from the backup copy (the main one was damaged), the entries address in
+    # the header is the backup's, near the old end of the drive. The main copy always goes at LBA 2.
+    primary_entries_lba = 2 if layout.get("from_backup") else h["entries_lba"]
     pad = lambda b: b + b"\0" * (esz * s - len(b))
     _write(path, backup_entries_lba * s, pad(raw))
     _write(path, (new_disk_sectors - 1) * s,
            _build_header(layout, new_disk_sectors - 1, 1, backup_entries_lba, first, last, ecrc))
-    _write(path, h["entries_lba"] * s, pad(raw))
-    _write(path, s, _build_header(layout, 1, new_disk_sectors - 1, h["entries_lba"], first, last, ecrc))
+    _write(path, primary_entries_lba * s, pad(raw))
+    _write(path, s, _build_header(layout, 1, new_disk_sectors - 1, primary_entries_lba, first, last, ecrc))
     mbr = bytearray(_read(path, 0, s))
     if mbr[510:512] == b"\x55\xAA" and mbr[450] == 0xEE:  # keep the protective entry covering the disk
         struct.pack_into("<I", mbr, 446 + 12, min(new_disk_sectors - 1, 0xFFFFFFFF))

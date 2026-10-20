@@ -136,8 +136,19 @@ class App:
             out[side] = d and {"name": d["name"], "size_text": d["size_text"], "path": d["path"]}
         return out
 
+    def _warn_if_rescue_copy_is_on(self, result):
+        """Cloning erases the target. If this session's rescued copy is saved there, say so."""
+        prev, dest = self.plan, result.get("dest_drive")
+        if not prev or prev.get("mode") == "clone" or not dest or not prev.get("image"):
+            return
+        if (prev.get("dest_drive") or {}).get("path") == dest["path"]:
+            result["warnings"].append("The rescued copy of the failing drive is saved on this target drive. Cloning "
+                                      "erases it. Copy out any files you still need first, or pick another target.")
+
     def clone_plan(self, q, b):
-        return self._clone_summary(clone_mod.make_clone_plan(self.system, b.get("source", ""), b.get("dest", "")))
+        result = clone_mod.make_clone_plan(self.system, b.get("source", ""), b.get("dest", ""))
+        self._warn_if_rescue_copy_is_on(result)
+        return self._clone_summary(result)
 
     def clone_start(self, q, b):
         with self._lock:

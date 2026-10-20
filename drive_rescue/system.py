@@ -9,6 +9,31 @@ import shutil
 import subprocess
 
 
+# A drive that failed was usually not shut down cleanly, so its journal or log is dirty. These are the
+# read-only ways to open such a filesystem, tried in order. Every one of them is read-only: none can
+# replay a journal or write anything back to the copy.
+RO_OPTIONS = {
+    "ext2": ["ro,noload"], "ext3": ["ro,noload"], "ext4": ["ro,noload"],
+    "xfs": ["ro,norecovery,nouuid"],
+    "btrfs": ["ro", "ro,rescue=usebackuproot", "ro,usebackuproot", "ro,rescue=all"],
+    "hfsplus": ["ro", "ro,force"],
+}
+
+
+def mount_attempts(device, mountpoint, fstype=None, read_only=False):
+    """The mount commands to try, most careful first."""
+    if not fstype:
+        return [["mount", "-o", "ro" if read_only else "rw", device, mountpoint]]
+    if fstype == "ntfs":
+        if read_only:  # ntfs3 first; ntfs-3g can open volumes Windows left hibernated or unclean
+            variants = [("ntfs3", "ro"), ("ntfs-3g", "ro,norecover"), ("ntfs-3g", "ro")]
+        else:
+            variants = [("ntfs3", "rw"), ("ntfs-3g", "rw")]
+        return [["mount", "-t", t, "-o", o, device, mountpoint] for t, o in variants]
+    options = RO_OPTIONS.get(fstype, ["ro"]) if read_only else ["rw"]
+    return [["mount", "-t", fstype, "-o", o, device, mountpoint] for o in options]
+
+
 class System:
     """Real system access (run as root on the rescue USB)."""
 
@@ -62,20 +87,15 @@ class System:
         rc, _out, err = self.run(["blockdev", "--setro", path], timeout=10)
         return rc == 0, err.strip()
 
+    def set_readwrite(self, path):
+        """Undo set_readonly. Only the clone target is ever made writable again."""
+        rc, _out, err = self.run(["blockdev", "--setrw", path], timeout=10)
+        return rc == 0, err.strip()
+
     # ----- mounting -------------------------------------------------------
     def mount(self, device, mountpoint, fstype=None, read_only=False):
         os.makedirs(mountpoint, exist_ok=True)
-        opts = "ro" if read_only else "rw"
-        if read_only and fstype in ("ext2", "ext3", "ext4"):
-            opts += ",noload"  # do not replay the journal on a damaged image
-        attempts = []
-        if fstype == "ntfs":
-            attempts = [["mount", "-t", "ntfs3", "-o", opts, device, mountpoint],
-                        ["mount", "-t", "ntfs-3g", "-o", opts, device, mountpoint]]
-        elif fstype:
-            attempts = [["mount", "-t", fstype, "-o", opts, device, mountpoint]]
-        else:
-            attempts = [["mount", "-o", opts, device, mountpoint]]
+        attempts = mount_attempts(device, mountpoint, fstype, read_only)
         last = ""
         for cmd in attempts:
             rc, _out, err = self.run(cmd, timeout=60)
