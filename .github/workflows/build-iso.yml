@@ -6,6 +6,15 @@ on:
       systemrescue_version:
         description: "SystemRescue version to build on"
         default: "13.02"
+  push:
+    branches:
+      - "fix/**"
+    paths:
+      - ".github/workflows/build-iso.yml"
+      - "iso/**"
+      - "usb/**"
+      - "drive_rescue/**"
+      - "tests/**"
 
 jobs:
   build:
@@ -22,7 +31,7 @@ jobs:
 
       - name: Download SystemRescue and check it
         env:
-          V: ${{ inputs.systemrescue_version }}
+          V: ${{ inputs.systemrescue_version || '13.02' }}
         run: |
           set -e
           curl -fL --retry 3 -o base.iso "https://fastly-cdn.system-rescue.org/releases/$V/systemrescue-$V-amd64.iso"
