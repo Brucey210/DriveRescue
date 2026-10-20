@@ -1,0 +1,11 @@
+#!/bin/sh
+# SystemRescue runs this at start-up. It starts Drive Rescue in the background so the
+# boot is not held up, and opens it once the desktop is ready.
+for dir in /run/archiso/bootmnt/drive-rescue /run/archiso/copytoram/drive-rescue; do
+  if [ -f "$dir/start.sh" ]; then
+    setsid sh "$dir/start.sh" --background >/tmp/drive-rescue-autorun.log 2>&1 &
+    exit 0
+  fi
+done
+echo "Drive Rescue folder not found on the USB stick."
+exit 0

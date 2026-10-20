@@ -1,0 +1,728 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Drive Rescue</title>
+<style>
+:root{
+  --bg:#F5F7FA;--surface:#FFFFFF;--line:#DDE3EA;--line2:#C5CED8;--ink:#16202C;--muted:#5B6877;
+  --accent:#0B7A75;--accent-bg:#EAF6F5;--accent-line:#BFE0DD;--accent-ink:#0B4F4B;
+  --warn-bg:#FFF4E0;--warn-line:#F0D49B;--warn-ink:#6B4300;--amber:#E0A030;
+  --bad-bg:#FDECEA;--bad-line:#F4B8B1;--bad-ink:#9B1C14;--ok-bg:#E6F4EA;--ok-ink:#17623A;
+  --neutral-bg:#EEF1F5;--neutral-ink:#4A5663;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:1rem/1.4 system-ui,"Segoe UI",Ubuntu,"DejaVu Sans",sans-serif}
+button,input,select{font:inherit;color:inherit}
+.page{min-height:100vh;display:flex;flex-direction:column}
+.app{max-width:1040px;margin:0 auto;width:100%;flex:1;display:flex;flex-direction:column}
+header{display:flex;align-items:center;justify-content:space-between;padding:22px 40px 0}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:1.0625rem}
+.logo{width:32px;height:32px;border-radius:9px;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center}
+#stepLabel{font-size:0.8125rem;color:var(--muted)}
+nav{display:flex;gap:10px;padding:16px 40px 0}
+nav div{flex:1;display:flex;flex-direction:column;gap:8px;font-size:0.875rem;color:var(--muted);font-weight:500}
+nav i{display:block;height:4px;border-radius:2px;background:var(--line)}
+nav .done i,nav .now i{background:var(--accent)}
+nav .now{color:var(--ink);font-weight:700}
+main{flex:1;padding:20px 40px 24px;display:flex;flex-direction:column;gap:16px}
+h1{margin:0;font-size:1.75rem;line-height:1.2;font-weight:700}
+.sub{margin:6px 0 0;color:var(--muted);font-size:1.0625rem}
+.muted{color:var(--muted)}
+.footbar{position:sticky;bottom:0;background:#fff;border-top:1px solid var(--line);z-index:5}
+footer{max-width:1040px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:12px 16px;padding:14px 40px;flex-wrap:wrap}
+.note svg{flex:none}
+.tools{display:flex;align-items:center;gap:6px}
+.tbtn{width:36px;height:36px;border-radius:10px;border:1px solid var(--line);background:#fff;color:var(--muted);font-weight:700;cursor:pointer}
+.tbtn.pw{width:auto;padding:0 12px;font-size:.875rem;font-weight:600}
+.tbtn[hidden]{display:none}
+.tbtn:hover{border-color:var(--accent);color:var(--accent)}
+.tbtn:focus-visible{outline:3px solid #7CC4C0;outline-offset:2px}
+html{font-size:calc(16px * var(--zoom,1))}
+footer .grp{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.note{display:flex;align-items:center;gap:8px;font-size:0.875rem;color:var(--muted)}
+.btn{min-height:48px;padding:0 24px;border-radius:12px;border:1px solid var(--line2);background:#fff;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;padding:0 28px}
+.btn.quiet{border-color:transparent;background:transparent;color:var(--muted)}
+.btn[disabled]{background:#C9D3DC;border-color:#C9D3DC;color:#3F4B58;cursor:not-allowed}
+.btn.quiet[disabled]{background:transparent;border-color:transparent;color:#8A96A3}
+.btn:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible,.link:focus-visible{outline:3px solid #7CC4C0;outline-offset:2px}
+.cols{display:flex;gap:14px;align-items:flex-start}
+.cols>.col{flex:1;min-width:0;display:flex;flex-direction:column;gap:8px}
+.eyebrow{display:flex;align-items:baseline;gap:8px}
+.eyebrow b{font-size:0.75rem;letter-spacing:.08em;color:var(--accent)}
+.eyebrow span{font-size:1.0625rem;font-weight:700}
+.arrow{margin-top:50px;flex:none;width:40px;height:40px;border-radius:50%;background:#fff;border:1px solid var(--line);color:var(--accent);display:flex;align-items:center;justify-content:center}
+.drive{display:flex;align-items:center;gap:12px;min-height:58px;padding:8px 14px;border-radius:12px;border:1.5px solid var(--line);background:#fff;cursor:pointer}
+.drive.on{border-color:var(--accent);background:var(--accent-bg)}
+.drive.off{background:#F8F9FB;border-color:#E6EAF0;cursor:not-allowed}
+.drive input{width:18px;height:18px;margin:0;accent-color:var(--accent)}
+.ico{display:flex;color:var(--muted)}
+.drive.on .ico{color:var(--accent)}
+.txt{flex:1;min-width:0;display:flex;flex-direction:column}
+.txt b{font-size:0.9375rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.txt small{font-size:0.875rem;color:var(--muted)}
+.drive.off .txt b{color:var(--neutral-ink)}
+.tag{font-size:0.75rem;font-weight:600;padding:4px 10px;border-radius:999px;white-space:nowrap}
+.tag.bad,.tag.failing{background:var(--bad-bg);color:var(--bad-ink)}
+.tag.ok,.tag.healthy{background:var(--ok-bg);color:var(--ok-ink)}
+.tag.warn,.tag.warning{background:var(--warn-bg);color:var(--warn-ink)}
+.tag.neutral,.tag.unknown{background:var(--neutral-bg);color:var(--neutral-ink)}
+.banner{display:flex;align-items:flex-start;gap:12px;padding:12px 16px;border-radius:12px;font-size:0.9375rem;font-weight:500;line-height:1.4;background:var(--accent-bg);border:1px solid var(--accent-line);color:var(--accent-ink)}
+.banner svg{flex:none;margin-top:1px}
+.banner.warn{background:var(--warn-bg);border-color:var(--warn-line);color:var(--warn-ink)}
+.banner.bad{background:var(--bad-bg);border-color:var(--bad-line);color:var(--bad-ink)}
+.banner.plain{background:#fff;border-color:var(--line);color:var(--muted)}
+.banner ul{margin:0;padding-left:18px}
+details.adv{background:#fff;border:1px solid var(--line);border-radius:12px}
+details.adv summary{display:flex;align-items:center;gap:8px;min-height:48px;padding:0 18px;font-weight:600;cursor:pointer;list-style:none}
+details.adv summary::-webkit-details-marker{display:none}
+details.adv summary small{font-weight:400;color:var(--muted)}
+details.adv[open] summary svg{transform:rotate(90deg)}
+.fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;padding:4px 18px 18px}
+.fields label{display:flex;flex-direction:column;gap:6px;font-size:0.8125rem;font-weight:600}
+.fields input,.fields select{height:44px;border-radius:10px;border:1px solid var(--line2);padding:0 12px;background:#fff;font-weight:400}
+.card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:18px 20px}
+.card h2{margin:0 0 8px;font-size:0.9375rem;font-weight:700}
+.stats{display:flex;align-items:center;justify-content:space-between;gap:24px;flex-wrap:wrap}
+.big{font-size:3.5rem;line-height:1;font-weight:700;color:var(--accent)}
+.big small{font-size:1rem;font-weight:400;color:var(--muted);margin-left:10px}
+.kv{display:flex;gap:40px;flex-wrap:wrap}
+.kv span{display:block;font-size:0.8125rem;color:var(--muted)}
+.kv b{font-size:1.25rem}
+.bar{height:12px;border-radius:6px;background:var(--line);overflow:hidden;margin-top:16px}
+.bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .6s}
+.legend{display:flex;gap:16px;font-size:0.875rem;color:var(--muted);flex-wrap:wrap}
+.legend span{display:flex;align-items:center;gap:6px}
+.legend i{width:10px;height:10px;border-radius:2px;display:block}
+.map{display:grid;grid-template-columns:repeat(42,minmax(0,1fr));gap:3px;margin-top:12px}
+.cell{height:14px;border-radius:2px;background:var(--line)}
+.cell.done{background:var(--accent)}
+.cell.skipped{background:var(--amber)}
+.split{display:flex;gap:16px;align-items:stretch}
+.split>.card:first-child{flex:1.7;min-width:0}
+.split>.card:last-child{flex:1;min-width:0}
+.phase{display:flex;gap:12px;padding:7px 0}
+.dot{flex:none;width:12px;height:12px;margin-top:4px;border-radius:50%;border:2px solid #9AA7B5;background:#fff}
+.phase.active .dot,.phase.done .dot{background:var(--accent);border-color:var(--accent)}
+.phase b{font-size:0.875rem}
+.phase small{display:block;font-size:0.875rem;color:var(--muted)}
+.three{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.three .card b{display:block;margin-bottom:4px}
+.three .card p{margin:0;color:var(--muted);font-size:0.875rem}
+.num{display:inline-flex;width:28px;height:28px;border-radius:50%;background:var(--accent-bg);color:var(--accent);align-items:center;justify-content:center;font-weight:700;margin-bottom:10px}
+.crumbs{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:0.875rem;color:var(--muted)}
+.link{background:none;border:0;padding:0;color:var(--accent);font-weight:600;cursor:pointer;text-align:left}
+.entry{display:flex;align-items:center;gap:12px;min-height:44px;padding:4px 14px;border-top:1px solid var(--line)}
+.entry:first-child{border-top:0}
+.entry input{width:18px;height:18px;accent-color:var(--accent)}
+.entry .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.entry small{color:var(--muted)}
+.list{background:#fff;border:1px solid var(--line);border-radius:12px;max-height:340px;overflow:auto}
+.mono{font-family:ui-monospace,Consolas,"DejaVu Sans Mono",monospace;font-size:0.875rem;word-break:break-all}
+.two{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.choice{text-align:left;background:#fff;border:1.5px solid var(--line);border-radius:16px;padding:22px;cursor:pointer;display:flex;flex-direction:column;gap:8px}
+.choice:hover{border-color:var(--accent);background:var(--accent-bg)}
+.choice:focus-visible{outline:3px solid #7CC4C0;outline-offset:2px}
+.choice b{font-size:1.1875rem}.choice p{margin:0;color:var(--muted);font-size:0.9375rem;flex:1}
+.choice .num{width:44px;height:44px;border-radius:12px}
+.choice .go{color:var(--accent);font-weight:600;display:flex;align-items:center;gap:8px;margin-top:6px}
+.confirm{display:flex;flex-direction:column;gap:6px;font-size:0.875rem;font-weight:600;max-width:320px}
+.confirm input{height:48px;border-radius:10px;border:1.5px solid var(--bad-line);padding:0 14px;background:#fff;font-size:1rem;letter-spacing:.08em}
+@media (max-width:760px){
+  .two{grid-template-columns:1fr}
+  header,nav,main,footer{padding-left:20px;padding-right:20px}
+  footer .grp{width:100%}footer .grp .btn{flex:1;justify-content:center}
+  nav div{font-size:0}nav .now{font-size:0.8125rem}
+  .cols,.split{flex-direction:column}.arrow{display:none}.three{grid-template-columns:1fr}
+  .fields{grid-template-columns:1fr}.big{font-size:2.75rem}
+}
+@media (prefers-reduced-motion:reduce){.bar i{transition:none}}
+</style>
+</head>
+<body>
+<div class="page"><div class="app">
+  <header>
+    <div class="brand"><div class="logo" id="logo"></div><span>Drive Rescue</span></div>
+    <div class="tools"><span id="stepLabel" style="margin-right:10px"></span>
+      <button type="button" class="tbtn pw" data-act="reboot" hidden>Restart</button>
+      <button type="button" class="tbtn pw" data-act="poweroff" hidden>Shut down</button>
+      <button type="button" class="tbtn" data-act="textSmaller" aria-label="Smaller text" title="Smaller text">A−</button>
+      <button type="button" class="tbtn" data-act="textBigger" aria-label="Larger text" title="Larger text">A+</button></div>
+  </header>
+  <nav id="steps" aria-label="Progress"></nav>
+  <main id="main"></main>
+  </div>
+  <div class="footbar"><footer id="footer"></footer></div>
+</div>
+
+<script>
+"use strict";
+const TOKEN = "__TOKEN__";
+const NAV = {
+  rescue: [[1, "Welcome"], [2, "Choose drives"], [3, "Copy"], [4, "Recover files"], [5, "Done"]],
+  clone: [[1, "Welcome"], [2, "Choose drives"], [3, "Clone"], [5, "Done"]],
+};
+const FAT_LIMIT = 4 * 1024 ** 3 - 1;
+const svg = (d, w = 20) => `<svg width="${w}" height="${w}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+const I = {
+  disk: svg('<rect x="3" y="5" width="18" height="14" rx="3"/><circle cx="8" cy="12" r="2"/><path d="M14 10h4M14 14h4"/>', 24),
+  logo: svg('<rect x="3" y="5" width="18" height="14" rx="3"/><circle cx="8" cy="12" r="2"/><path d="M14 10h4M14 14h4"/>', 18),
+  lock: svg('<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>', 18),
+  check: svg('<path d="M5 12.5l4.5 4.5L19 7.5"/>', 22),
+  warn: svg('<path d="M12 4l9 16H3z"/><path d="M12 10v4M12 17h.01"/>', 22),
+  arrow: svg('<path d="M5 12h14M13 6l6 6-6 6"/>', 20),
+  chev: svg('<path d="M9 6l6 6-6 6"/>', 16),
+  folder: svg('<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>', 22),
+  file: svg('<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/>', 22),
+};
+const $ = (s, el = document) => el.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+const S = {
+  step: 1, mode: "rescue", confirm: "", drives: [], health: {}, source: "", dest: "", folder: "DriveRescue",
+  opts: { style: "gentle", retries: 3 }, plan: null, status: null, timer: null,
+  rec: { info: null, vol: "", dir: null, sel: new Set(), task: null, error: "", loading: false, timer: null, finished: false },
+  loadError: "",
+};
+
+async function api(path, body) {
+  const res = await fetch("/api/" + path, {
+    method: body === undefined ? "GET" : "POST",
+    headers: { "X-Token": TOKEN, "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw Object.assign(new Error(data.error || "Something went wrong."), { data });
+  return data;
+}
+
+// ------------------------------------------------------------------ frame
+function chrome() {
+  $("#logo").innerHTML = I.logo;
+  const nav = NAV[S.mode], at = nav.findIndex(x => x[0] === S.step);
+  $("#stepLabel").textContent = `Step ${at + 1} of ${nav.length}`;
+  $("#steps").innerHTML = nav.map(([id, t], i) => {
+    const n = i + 1, cls = i < at ? "done" : i === at ? "now" : "";
+    return `<div class="${cls}"${i === at ? ' aria-current="step"' : ""}><i></i><span>${n}. ${t}</span></div>`;
+  }).join("");
+}
+function stopTimers() { clearInterval(S.timer); clearInterval(S.rec.timer); S.timer = S.rec.timer = null; }
+function go(step) {
+  stopTimers();
+  S.step = step;
+  chrome();
+  ({ 1: viewWelcome, 2: viewDrives, 3: viewCopy, 4: viewRecover, 5: viewDone })[step]();
+  window.scrollTo(0, 0);
+}
+const btn = (act, label, cls = "", extra = "") => `<button type="button" class="btn ${cls}" data-act="${act}" ${extra}>${label}</button>`;
+const lockText = () => S.mode === "clone" ? "The original drive is only ever read, never written to" : "The failing drive is only ever read, never written to";
+const lockNote = { toString() { return `<span class="note">${I.lock}${lockText()}</span>`; } };
+const ZOOMS = [1, 1.15, 1.3, 1.5];
+function setZoom(i) {
+  i = Math.max(0, Math.min(ZOOMS.length - 1, i)); S.zoom = i;
+  document.documentElement.style.setProperty("--zoom", ZOOMS[i]);
+  try { localStorage.setItem("dr-zoom", String(i)); } catch (e) { /* fine without it */ }
+}
+try { S.zoom = parseInt(localStorage.getItem("dr-zoom") || "0", 10) || 0; } catch (e) { S.zoom = 0; }
+function footer(left, right) { $("#footer").innerHTML = `<div class="grp">${left}</div><div class="grp">${right}</div>`; }
+
+// ----------------------------------------------------------------- step 1
+function viewWelcome() {
+  S.mode = "rescue"; chrome();
+  $("#main").innerHTML = `
+    <div><h1>What would you like to do?</h1><p class="sub">Choose one. Each takes a few simple steps.</p></div>
+    <div class="two">
+      <button type="button" class="choice" data-act="mode" data-mode="rescue">
+        <span class="num">${I.folder}</span><b>Rescue files from a failing drive</b>
+        <p>Make a gentle, safe copy of a drive that is failing or has lost data, then get your files back. The failing drive is never written to, and nothing on your healthy drive is erased.</p>
+        <span class="go">Rescue files ${I.arrow}</span></button>
+      <button type="button" class="choice" data-act="mode" data-mode="clone">
+        <span class="num">${I.disk}</span><b>Clone a healthy drive onto a bigger one</b>
+        <p>Copy a working drive, including Windows and everything on it, onto a larger drive, and use all of the extra space. The bigger drive is erased.</p>
+        <span class="go">Clone a drive ${I.arrow}</span></button>
+    </div>
+    <div id="pre"></div>
+    <div class="banner plain"><span>Not sure? If the drive is clicking, very slow, or has lost files, choose <b>Rescue files</b>. It copes with read errors. Cloning is only for drives that are working properly.</span></div>`;
+  footer(`<span class="note">${I.lock}Nothing is written to any drive until you confirm</span>`, "");
+  api("preflight").then(r => {
+    if (S.step !== 1) return;
+    const need = r.items.filter(i => !i.ok && i.needed), opt = r.items.filter(i => !i.ok && !i.needed);
+    let html = need.map(i => banner("bad", `<b>${esc(i.label)} is missing.</b> ${esc(i.note)}`)).join("") +
+      (opt.length ? banner("warn", "Some extras are not available: " + opt.map(i => `<b>${esc(i.label)}</b> (${esc(i.note)})`).join(" ")) : "");
+    $("#pre").innerHTML = html ? `<div style="display:flex;flex-direction:column;gap:8px">${html}</div>` : "";
+    if (need.length) document.querySelectorAll(".choice").forEach(b => { b.disabled = true; b.style.opacity = ".55"; b.style.cursor = "not-allowed"; });
+  }).catch(() => {});
+}
+
+// ----------------------------------------------------------------- step 2
+function viewDrives() {
+  if (S.mode === "clone") return viewCloneDrives();
+  $("#main").innerHTML = `
+    <div><h1>Choose your drives</h1><p class="sub">Pick the failing drive to copy from, and a healthy drive to copy to.</p></div>
+    <div class="cols">
+      <div class="col" role="radiogroup" aria-label="Failing drive">
+        <div class="eyebrow"><b>FROM</b><span>The failing drive</span></div><div id="srcList"></div>
+      </div>
+      <div class="arrow">${I.arrow}</div>
+      <div class="col" role="radiogroup" aria-label="Healthy drive">
+        <div class="eyebrow"><b>TO</b><span>The healthy drive</span></div><div id="dstList"></div>
+      </div>
+    </div>
+    <div id="notice"></div>
+    <details class="adv"><summary>${I.chev}<span>Advanced options</span><small id="advHint"></small></summary>
+      <div class="fields">
+        <label>Copy style<select id="optStyle"><option value="gentle">Gentle (recommended)</option><option value="fast">Fast</option></select></label>
+        <label>Retry passes<input id="optRetries" type="number" min="0" max="10"></label>
+        <label>Folder on the healthy drive<input id="optFolder" type="text" maxlength="60"></label>
+      </div>
+    </details>`;
+  $("#optStyle").value = S.opts.style;
+  $("#optRetries").value = S.opts.retries;
+  $("#optFolder").value = S.folder;
+  advHint();
+  lists(); notice(); drivesFooter();
+  if (!S.drives.length) loadDrives();
+}
+function advHint() {
+  const el = $("#advHint");
+  if (el) el.textContent = `${S.opts.style === "fast" ? "Fast" : "Gentle"} copy · ${S.opts.retries} retry passes · folder ${S.folder || "DriveRescue"}`;
+}
+function row(kind, value, checked, disabled, title, meta, tag) {
+  return `<label class="drive ${checked ? "on" : ""} ${disabled ? "off" : ""}">
+    <input type="radio" name="${kind}" value="${esc(value)}" ${checked ? "checked" : ""} ${disabled ? "disabled" : ""}>
+    <span class="ico">${I.disk}</span>
+    <span class="txt"><b>${esc(title)}</b><small>${esc(meta)}</small></span>
+    <span class="tag ${tag[1]}">${esc(tag[0])}</span></label>`;
+}
+function lists() {
+  if (S.mode === "clone") return cloneLists();
+  const src = S.drives.find(d => d.path === S.source);
+  const driveMeta = d => `${d.size_text} · ${d.kind}${d.transport ? " · " + d.transport : ""}`;
+  $("#srcList").innerHTML = S.drives.length ? S.drives.map(d => {
+    if (d.is_boot) return row("source", d.path, false, true, "Rescue USB stick", driveMeta(d), ["Not available", "neutral"]);
+    const h = S.health[d.path];
+    return row("source", d.path, S.source === d.path, false, d.name, driveMeta(d), h ? [h.label, h.status] : ["Checking…", "neutral"]);
+  }).join("") : `<p class="muted">${S.loadError ? esc(S.loadError) : "Looking for drives…"}</p>`;
+  let dst = "";
+  for (const d of S.drives) {
+    if (d.is_boot) { dst += row("dest", d.path, false, true, "Rescue USB stick", driveMeta(d), ["Not available", "neutral"]); continue; }
+    for (const p of d.partitions) {
+      const same = d.path === S.source;
+      const fatOk = p.fstype === "vfat" && src && src.size <= FAT_LIMIT;
+      const usable = (p.dest_ok || fatOk) && !same;
+      const meta = same ? "On the failing drive" : usable ? `${p.size_text} · ${p.fstype} · ${d.name}` : (p.dest_reason || "Can't be used");
+      dst += row("dest", p.path, S.dest === p.path, !usable, p.label || p.name, meta, same ? ["Failing drive", "neutral"] : usable ? ["Ready", "ok"] : ["Can't use", "neutral"]);
+    }
+  }
+  $("#dstList").innerHTML = dst || `<p class="muted">${S.drives.length ? "No other drive found. Plug in the healthy drive, then press Rescan." : ""}</p>`;
+}
+function healthCard(path, title) {
+  const h = S.health[path];
+  if (!h || !h.details || !h.details.length) return "";
+  const dot = { ok: "var(--ok-ink)", warn: "var(--amber)", bad: "var(--bad-ink)" };
+  return `<details class="adv"><summary>${I.chev}<span>${esc(title)}: details</span><small>${esc(h.label)}</small></summary>
+    <div style="padding:2px 18px 14px;display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:8px 24px">
+    ${h.details.map(d => `<div style="display:flex;align-items:center;gap:8px"><i style="width:10px;height:10px;border-radius:50%;background:${dot[d.level] || "var(--line2)"};flex:none"></i><span class="muted">${esc(d.k)}</span><b style="margin-left:auto">${esc(d.v)}</b></div>`).join("")}
+    </div></details>`;
+}
+function banner(kind, html) {
+  const icon = kind === "warn" || kind === "bad" ? I.warn : kind === "plain" ? "" : I.check;
+  return `<div class="banner ${kind}" role="${kind === "bad" ? "alert" : "status"}">${icon}<span>${html}</span></div>`;
+}
+function notice() {
+  if (S.mode === "clone") return cloneNotice();
+  const el = $("#notice");
+  if (!el) return;
+  const p = S.plan;
+  let html = "";
+  if (!S.source || !S.dest) {
+    html = banner("", "The copy is saved as one image file (.img) in a folder on the healthy drive. Nothing already on that drive is erased or formatted.");
+  } else if (!p) {
+    html = banner("plain", "Checking your choices…");
+  } else {
+    if (p.errors.length) html += banner("bad", p.errors.length === 1 ? esc(p.errors[0]) : "<ul>" + p.errors.map(e => `<li>${esc(e)}</li>`).join("") + "</ul>");
+    for (const w of p.warnings) html += banner("warn", esc(w));
+    if (p.ok) {
+      html += p.resume
+        ? banner("", "An earlier copy was found in this folder. It will continue where it stopped.")
+        : banner("", `The copy is saved as one image file (.img). Nothing on the healthy drive is erased. It needs about ${esc(p.need_text)} free${p.free_text ? `, and there is ${esc(p.free_text)}` : ""}.`);
+    }
+  }
+  html += healthCard(S.source, S.mode === "clone" ? "Drive to copy" : "Failing drive");
+  el.innerHTML = html ? `<div style="display:flex;flex-direction:column;gap:8px">${html}</div>` : "";
+}
+function drivesFooter() {
+  if (S.mode === "clone") return cloneFooter();
+  footer(`${btn("back", "Back")}${lockNote}`,
+    `${btn("rescan", "Rescan", "quiet")}${btn("start", `Start copying ${I.arrow}`, "primary", S.plan && S.plan.ok ? "" : "disabled")}`);
+}
+let planTimer;
+function schedulePlan() {
+  clearTimeout(planTimer);
+  S.plan = null; notice(); drivesFooter();
+  if (!S.source || !S.dest) return;
+  planTimer = setTimeout(async () => {
+    const asked = S.source + "|" + S.dest;
+    let plan;
+    try { plan = S.mode === "clone" ? await api("clone/plan", { source: S.source, dest: S.dest }) : await api("plan", { source: S.source, dest: S.dest, folder: S.folder, opts: S.opts }); }
+    catch (e) { plan = { ok: false, errors: [e.message], warnings: [] }; }
+    if (asked !== S.source + "|" + S.dest) return;
+    S.plan = plan; notice(); drivesFooter();
+  }, 250);
+}
+async function loadDrives() {
+  S.loadError = "";
+  try {
+    const r = await api("drives");
+    S.drives = r.drives;
+    if (S.source && !S.drives.some(d => d.path === S.source)) S.source = "";
+    if (S.dest && !S.drives.some(d => S.mode === "clone" ? d.path === S.dest : d.partitions.some(p => p.path === S.dest))) S.dest = "";
+  } catch (e) { S.drives = []; S.loadError = e.message; }
+  if (S.step === 2) { lists(); schedulePlan(); }
+  for (const d of S.drives) {
+    if (d.is_boot || S.health[d.path]) continue;
+    api("health?path=" + encodeURIComponent(d.path))
+      .then(h => { S.health[d.path] = h; if (S.step === 2) { lists(); if (d.path === S.source) notice(); } })
+      .catch(() => { S.health[d.path] = { status: "unknown", label: "Unknown" }; if (S.step === 2) lists(); });
+  }
+}
+
+// ------------------------------------------------------- step 2 (clone)
+function viewCloneDrives() {
+  $("#main").innerHTML = `
+    <div><h1>Choose your drives</h1><p class="sub">Pick the working drive to copy, and the bigger drive to copy it onto.</p></div>
+    <div class="cols">
+      <div class="col" role="radiogroup" aria-label="Drive to copy">
+        <div class="eyebrow"><b>FROM</b><span>The drive to copy</span></div><div id="srcList"></div>
+      </div>
+      <div class="arrow">${I.arrow}</div>
+      <div class="col" role="radiogroup" aria-label="Bigger drive">
+        <div class="eyebrow"><b>TO</b><span>The bigger drive</span></div><div id="dstList"></div>
+      </div>
+    </div>
+    <div id="notice"></div>
+    <div id="confirmBox"></div>`;
+  lists(); notice(); drivesFooter();
+  if (!S.drives.length) loadDrives();
+}
+function cloneLists() {
+  const src = S.drives.find(d => d.path === S.source);
+  const meta = d => `${d.size_text} · ${d.kind}${d.transport ? " · " + d.transport : ""}`;
+  $("#srcList").innerHTML = S.drives.length ? S.drives.map(d => {
+    if (d.is_boot) return row("source", d.path, false, true, "Rescue USB stick", meta(d), ["Not available", "neutral"]);
+    const h = S.health[d.path];
+    return row("source", d.path, S.source === d.path, false, d.name, meta(d), h ? [h.label, h.status] : ["Checking…", "neutral"]);
+  }).join("") : `<p class="muted">${S.loadError ? esc(S.loadError) : "Looking for drives…"}</p>`;
+  let dst = "";
+  for (const d of S.drives) {
+    if (d.is_boot) { dst += row("dest", d.path, false, true, "Rescue USB stick", meta(d), ["Not available", "neutral"]); continue; }
+    const same = d.path === S.source, small = src && d.size < src.size;
+    const tag = same ? ["Drive to copy", "neutral"] : small ? ["Too small", "neutral"] : src && d.size === src.size ? ["Same size", "warn"] : src ? ["Bigger", "ok"] : ["", "neutral"];
+    const info = d.partitions.length ? `${meta(d)} · erased: ${d.partitions.length} partition${d.partitions.length > 1 ? "s" : ""}` : meta(d);
+    dst += row("dest", d.path, S.dest === d.path, same || small, d.name, info, tag);
+  }
+  $("#dstList").innerHTML = dst || `<p class="muted">${S.drives.length ? "No other drive found. Plug in the bigger drive, then press Rescan." : ""}</p>`;
+}
+function cloneNotice() {
+  const el = $("#notice"), box = $("#confirmBox");
+  if (!el) return;
+  const p = S.plan;
+  let html = "";
+  if (!S.source || !S.dest) {
+    html = banner("", "The whole drive is copied, then the extra room on the bigger drive is added to your main partition. The bigger drive ends up with all of its space usable.");
+  } else if (!p) {
+    html = banner("plain", "Checking your choices…");
+  } else {
+    if (p.errors.length) html += banner("bad", p.errors.length === 1 ? esc(p.errors[0]) : "<ul>" + p.errors.map(e => `<li>${esc(e)}</li>`).join("") + "</ul>");
+    for (const w of p.warnings) html += banner("warn", esc(w));
+    if (p.ok) {
+      if (p.health && p.health.status === "healthy") html += banner("", "The drive to copy reports that it is healthy.");
+      if (p.layout && p.layout.text) html += banner(p.layout.extends ? "" : "plain", esc(p.layout.text));
+      const what = p.dest_contents.length ? p.dest_contents.map(c => `${esc(c.name)} (${esc(c.size_text)})`).join(", ") : "nothing recognisable";
+      html += banner("bad", `<b>Everything on ${esc(p.dest_drive.name)} (${esc(p.dest_drive.size_text)}) will be erased:</b> ${what}.`);
+    }
+  }
+  html += healthCard(S.source, "Drive to copy");
+  el.innerHTML = html ? `<div style="display:flex;flex-direction:column;gap:8px">${html}</div>` : "";
+  if (box) {
+    const show = p && p.ok;
+    if (show && !box.firstChild) {
+      box.innerHTML = `<label class="confirm">Type <b>ERASE</b> to confirm
+        <input id="confirmText" type="text" autocomplete="off" spellcheck="false" placeholder="ERASE"></label>`;
+      $("#confirmText").value = S.confirm;
+    } else if (!show) box.innerHTML = "";
+  }
+}
+let cloneSig = "";
+function cloneFooter() {
+  const ready = S.plan && S.plan.ok && S.confirm.trim().toUpperCase() === "ERASE";
+  const sig = `${ready}|${!!S.plan}|${S.step}`;
+  if (sig === cloneSig && $("#footer").querySelector('[data-act="startClone"]')) return;
+  cloneSig = sig;
+  footer(`${btn("back", "Back")}${lockNote}`,
+    `${btn("rescan", "Rescan", "quiet")}${btn("startClone", `Start cloning ${I.arrow}`, "primary", ready ? "" : "disabled")}`);
+}
+
+// ----------------------------------------------------------------- step 3
+let cellCache = [];
+function viewCopy() {
+  cellCache = [];
+  $("#main").innerHTML = `
+    <div><h1 id="cTitle">Getting ready…</h1><p class="sub" id="cSub" aria-live="polite"></p></div>
+    <div id="cNotice"></div>
+    <div class="card">
+      <div class="stats">
+        <div class="big"><span id="cPct">0%</span><small id="cPctLbl">${S.mode === "clone" ? "of the drive cloned" : "of the drive copied"}</small><div class="muted" id="cAmount" style="font-size:0.9375rem;margin-top:6px"></div></div>
+        <div class="kv"><div><span>Time left</span><b id="cEta">-</b></div><div><span>Speed</span><b id="cSpeed">-</b></div><div><span>${S.mode === "clone" ? "Not readable" : "Skipped for now"}</span><b id="cSkip">0 B</b></div></div>
+      </div>
+      <div class="bar" role="progressbar" aria-label="Copy progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="cBarWrap"><i id="cBar"></i></div>
+    </div>
+    <div class="split">
+      <div class="card"><div class="stats"><h2 style="margin:0">Drive map</h2>
+        <div class="legend"><span><i style="background:var(--accent)"></i>Copied</span><span><i style="background:var(--amber)"></i>Skipped for now</span><span><i style="background:var(--line)"></i>Not yet copied</span></div></div>
+        <div class="map" id="cMap"></div></div>
+      <div class="card"><h2>What's happening</h2><div id="cPhases"></div></div>
+    </div>`;
+  const map = $("#cMap");
+  map.innerHTML = Array.from({ length: 294 }, () => '<div class="cell"></div>').join("");
+  copyFooter(S.status || { state: "none" });
+  if (S.status) paintCopy(S.status);
+  pollCopy();
+  S.timer = setInterval(pollCopy, 1000);
+}
+async function pollCopy() {
+  try { S.status = await api("status"); } catch (e) { S.status = { state: "error", message: e.message, cells: [], phases: [] }; }
+  if (S.step !== 3) return;
+  paintCopy(S.status); copyFooter(S.status);
+}
+function paintCopy(s) {
+  if (s.state === "none") {
+    $("#cTitle").textContent = "No copy is running";
+    $("#cSub").textContent = "Go back and choose the drives to start one.";
+    return;
+  }
+  const clone = s.mode === "clone";
+  const titles = { running: clone ? "Cloning your drive" : "Copying your drive", pausing: "Pausing…", paused: "Paused", finishing: "Using the extra space",
+    done: clone ? "Clone finished" : "Copy finished", stopped: "Stopped", error: clone ? "The clone stopped" : "The copy stopped", idle: "Getting ready…" };
+  $("#cTitle").textContent = titles[s.state] || "Copying your drive";
+  let sub = clone ? "Keep the computer on and the drives plugged in. Don't unplug either drive until this finishes."
+                  : "Keep the computer on. You can pause at any time and pick up where you left off.";
+  if (s.state === "done") sub = s.complete ? "Everything on the drive was copied." : `${s.percent}% of the drive was copied. ${s.skipped_text} could not be read.`;
+  else if (s.message) sub = s.message;
+  $("#cSub").textContent = sub;
+  let note = "";
+  if (s.state === "error") note = banner("bad", esc(s.message));
+  else if (s.state === "done" && clone && s.result) {
+    note = (s.result.ok === false || (s.result.warnings || []).length ? "" : "") +
+      (s.result.lines || []).map(l => banner("", esc(l))).join("") +
+      (s.result.warnings || []).map(w => banner("warn", esc(w))).join("");
+  } else if (s.state === "done") note = banner("", "Next, get your files back from the copy.");
+  $("#cNotice").innerHTML = note ? `<div style="display:flex;flex-direction:column;gap:8px">${note}</div>` : "";
+  $("#cPct").textContent = `${s.percent}%`;
+  $("#cAmount").textContent = s.size_text ? `${s.finished_text} of ${s.size_text}` : "";
+  $("#cPctLbl").textContent = s.state === "done" ? (clone ? "cloned" : "copied") : (clone ? "of the drive cloned" : "of the drive copied");
+  $("#cEta").textContent = s.state === "running" ? s.eta_text : "-";
+  $("#cSpeed").textContent = s.speed_text;
+  $("#cSkip").textContent = s.skipped_text;
+  $("#cBar").style.width = `${Math.min(100, s.percent)}%`;
+  $("#cBarWrap").setAttribute("aria-valuenow", Math.round(s.percent));
+  const cells = $("#cMap").children;
+  (s.cells || []).forEach((c, i) => { if (cellCache[i] !== c && cells[i]) { cells[i].className = "cell " + c; cellCache[i] = c; } });
+  $("#cPhases").innerHTML = (s.phases || []).map(p => {
+    const note = p.status === "done" ? "Done" : p.status === "skipped" ? "Not needed" : p.note;
+    return `<div class="phase ${p.status}"><span class="dot"></span><span><b>${esc(p.title)}</b><small>${esc(note)}</small></span></div>`;
+  }).join("");
+}
+function copyFooter(s) {
+  const live = s.state === "running" || s.state === "pausing";
+  const clone = S.mode === "clone";
+  const canGo = clone ? s.state === "done" : ["done", "paused", "stopped", "error"].includes(s.state) && (s.finished || 0) > 0;
+  const left = s.state === "finishing" ? `<span class="note">${I.lock}Almost done. Please don't unplug anything.</span>` : String(lockNote);
+  let right = "";
+  if (s.state === "running" || s.state === "pausing") right += btn("pause", "Pause", "", s.state === "pausing" ? "disabled" : "");
+  if (["paused", "error", "stopped"].includes(s.state)) right += btn("resume", "Resume");
+  if (live || s.state === "paused") right += btn("stop", "Stop", "quiet", s.state === "pausing" ? "disabled" : "");
+  if (s.state === "none") right += btn("back", "Back");
+  if (clone) { if (s.state !== "finishing") right += btn("toDone", `${s.state === "done" ? "Continue" : "Continue"} ${I.arrow}`, "primary", canGo ? "" : "disabled"); }
+  else right += btn("toRecover", `${s.state === "done" ? "Continue to recovery" : "Open what's copied so far"} ${I.arrow}`, "primary", canGo ? "" : "disabled");
+  if ($("#footer").dataset.sig !== left + right) { footer(left, right); $("#footer").dataset.sig = left + right; }
+}
+
+// ----------------------------------------------------------------- step 4
+async function viewRecover() {
+  S.rec.loading = true; S.rec.error = ""; S.rec.task = null; S.rec.sel = new Set();
+  recoverPaint();
+  try {
+    S.rec.info = await api("recover/open", {});
+    S.rec.vol = S.rec.info.volumes[0] ? S.rec.info.volumes[0].id : "";
+    if (S.rec.vol) await loadDir("");
+  } catch (e) { S.rec.error = e.message; }
+  S.rec.loading = false;
+  if (S.step === 4) recoverPaint();
+}
+async function loadDir(rel) {
+  try { S.rec.dir = await api(`recover/list?volume=${encodeURIComponent(S.rec.vol)}&rel=${encodeURIComponent(rel)}`); S.rec.error = ""; }
+  catch (e) { S.rec.error = e.message; }
+}
+const kb = n => n < 1000 ? `${n} B` : n < 1e6 ? `${(n / 1e3).toFixed(0)} kB` : n < 1e9 ? `${(n / 1e6).toFixed(1)} MB` : `${(n / 1e9).toFixed(1)} GB`;
+function recoverPaint() {
+  if (S.step !== 4) return;
+  const r = S.rec, running = r.task && r.task.state === "running";
+  let body = "";
+  if (r.loading) body = `<div class="card muted">Opening the copy…</div>`;
+  else if (r.error && !r.dir) body = banner("bad", esc(r.error)) + (r.info === null ? "" : "");
+  else if (r.info && !r.info.readable) {
+    body = banner("warn", "The folders inside the copy are too damaged to browse. You can still scan the copy for files by type, such as photos and documents. Names and folders won't be kept.");
+  } else if (r.dir) {
+    const parts = r.dir.rel ? r.dir.rel.split("/") : [];
+    const crumbs = [`<button class="link" data-act="crumb" data-rel="">Everything</button>`]
+      .concat(parts.map((p, i) => `<button class="link" data-act="crumb" data-rel="${esc(parts.slice(0, i + 1).join("/"))}">${esc(p)}</button>`)).join(" › ");
+    const vols = r.info.volumes.length > 1 ? `<label class="muted">Drive section: <select id="volSel">${r.info.volumes.map(v => `<option value="${esc(v.id)}" ${v.id === r.vol ? "selected" : ""}>${esc(v.name)} (${esc(v.fstype)}, ${esc(v.size_text)})</option>`).join("")}</select></label>` : "";
+    const all = r.dir.entries.length && r.dir.entries.every(e => r.sel.has(r.vol + ":" + e.rel));
+    body = `${vols}<div class="crumbs">${crumbs}</div>
+      <div class="list" role="group" aria-label="Files in this folder">
+        ${r.dir.entries.length ? `<div class="entry"><input type="checkbox" id="selAll" aria-label="Select everything in this folder" ${all ? "checked" : ""}><span class="nm muted">Select everything in this folder</span></div>` : ""}
+        ${r.dir.entries.map(e => `<div class="entry"><input type="checkbox" data-rel="${esc(e.rel)}" aria-label="Select ${esc(e.name)}" ${r.sel.has(r.vol + ":" + e.rel) ? "checked" : ""}>
+          <span class="ico">${e.is_dir ? I.folder : I.file}</span>
+          <span class="nm">${e.is_dir ? `<button class="link" data-act="open" data-rel="${esc(e.rel)}">${esc(e.name)}</button>` : esc(e.name)}</span>
+          <small>${e.is_dir ? "" : esc(e.size_text)}</small></div>`).join("") || `<div class="entry muted">This folder is empty.</div>`}
+      </div>${r.dir.truncated ? banner("plain", "Only the first part of this long folder is shown.") : ""}${r.error ? banner("bad", esc(r.error)) : ""}`;
+  }
+  if (r.task && r.task.state !== "idle") body += taskCard(r.task);
+  $("#main").innerHTML = `<div><h1>Get your files back</h1><p class="sub">${r.info && !r.info.readable ? "Scan the copy to find your files." : "Tick what you want to recover. It is copied to the healthy drive, next to your image file."}</p></div>${body}`;
+  const n = r.sel.size, readable = r.info && r.info.readable;
+  footer(`${btn("backCopy", "Back")}${lockNote}`,
+    `${readable ? btn("carve", "Scan for files instead", "", running ? "disabled" : "") : btn("carve", "Scan for files", "primary", r.loading || running ? "disabled" : "")}
+     ${readable ? btn("recoverSel", `Recover ${n ? n + " selected" : "selected"} ${I.arrow}`, "primary", n && !running ? "" : "disabled") : ""}
+     ${running ? btn("cancelRec", "Cancel", "quiet") : ""}`);
+}
+function taskCard(t) {
+  const what = t.kind === "carve" ? "Scanning for files" : "Copying your files";
+  const head = { running: what + "…", done: "Finished", error: "Stopped", cancelled: "Cancelled" }[t.state] || what;
+  const failed = t.failed_count ? `<br><span class="muted">${t.failed_count} could not be read and were skipped.</span>` : "";
+  return `<div class="card" aria-live="polite"><h2>${esc(head)}</h2>${t.current && t.state === "running" ? `<div class="muted">${esc(t.current)}</div>` : ""}<b>${t.copied}</b> ${(t.copied === 1 ? "file " : "files ") + (t.kind === "carve" ? "found" : "copied")}${t.bytes ? ` · ${esc(t.bytes_text)}` : ""}${failed}${t.message ? `<br>${esc(t.message)}` : ""}</div>`;
+}
+function watchTask() {
+  clearInterval(S.rec.timer);
+  S.rec.timer = setInterval(async () => {
+    try { S.rec.task = await api("recover/status"); } catch (e) { return; }
+    if (S.rec.task.state !== "running") {
+      clearInterval(S.rec.timer);
+      if (S.rec.task.state === "done") return go(5);
+    }
+    recoverPaint();
+  }, 1000);
+}
+
+// ----------------------------------------------------------------- step 5
+function viewDone() {
+  if (S.mode === "clone") return viewCloneDone();
+  const t = S.rec.task || {};
+  const where = (S.rec.info && S.rec.info.out_dir) || t.out_dir || "";
+  const folder = t.out_dir || where;
+  $("#main").innerHTML = `
+    <div><h1>${S.rec.finished ? "You're finished" : "Your files are back"}</h1>
+    <p class="sub">${S.rec.finished ? "It is safe to shut down the computer and unplug the drives." : "They were saved on the healthy drive."}</p></div>
+    <div class="card"><h2>Where to find them</h2><div class="mono">${esc(folder)}</div>
+      <p class="muted" style="margin:8px 0 0">On the healthy drive, inside the folder "${esc((S.status && S.status.folder) || "DriveRescue")}".</p></div>
+    <div class="card"><h2>Summary</h2><b>${t.copied || 0}</b> ${(t.copied === 1 ? "file " : "files ") + (t.kind === "carve" ? "found" : "recovered")}${t.bytes ? ` (${esc(t.bytes_text)})` : ""}
+      ${t.failed_count ? `<p class="muted" style="margin:8px 0 0">${t.failed_count} could not be read: ${esc((t.failed || []).slice(0, 5).map(f => f.path.split("/").pop()).join(", "))}${t.failed_count > 5 ? ", and more" : ""}.</p>` : ""}</div>`;
+  footer(S.rec.finished ? "" : btn("backRecover", "Recover more"), S.rec.finished ? "" : btn("finish", "Finish", "primary"));
+}
+
+function viewCloneDone() {
+  const s = S.status || {}, r = s.result || {};
+  const ok = r.ok !== false && s.complete;
+  const size = esc(s.dest_size_text || "");
+  $("#main").innerHTML = `
+    <div><h1>${ok ? "Your new drive is ready" : "The clone needs attention"}</h1>
+    <p class="sub">${ok ? "Your drive was copied" + (r.extended ? " and all of the extra space is now in use." : ".") : "Read the notes below before using the new drive."}</p></div>
+    ${ok && r.extended ? `<div class="card"><h2>Your space</h2><div class="stats"><div class="big"><span>${size}</span><small>${esc(s.dest_name || "")}</small></div>
+      <div class="kv"><div><span>Main partition before</span><b>${esc(r.from_text || "")}</b></div><div><span>Main partition now</span><b>${esc(r.to_text || "")}</b></div></div></div>
+      ${r.unallocated_text ? `<p class="muted" style="margin:10px 0 0">About ${esc(r.unallocated_text)} is left unused at the end of the drive.</p>` : ""}</div>` : ""}
+    <div style="display:flex;flex-direction:column;gap:8px">
+      ${(r.lines || []).map(l => banner("", esc(l))).join("")}
+      ${(r.warnings || []).map(w => banner("warn", esc(w))).join("")}
+    </div>
+    <div class="card"><h2>Before you start up from the new drive</h2>
+      <p class="muted" style="margin:0">Unplug the original drive, or at least don't start Windows with both drives connected. They are exact twins, and Windows can get confused by that. Keep the original somewhere safe until you are happy that everything works.</p></div>`;
+  footer(btn("again", "Clone another drive"), `<span class="note">${I.check}It is safe to shut down and unplug the drives</span>`);
+}
+
+// ----------------------------------------------------------------- events
+document.addEventListener("click", async ev => {
+  const el = ev.target.closest("[data-act]");
+  if (!el || el.disabled) return;
+  const act = el.dataset.act, rel = el.dataset.rel;
+  try {
+    if (act === "poweroff" || act === "reboot") {
+      if (confirm(act === "poweroff" ? "Shut down the computer? Make sure no copy is running." : "Restart the computer? Make sure no copy is running.")) {
+        await api("system/power", { action: act });
+        document.body.innerHTML = '<p style="font:1.25rem system-ui;padding:3rem;text-align:center">' + (act === "poweroff" ? "Shutting down… you can unplug the drives when the screen goes dark." : "Restarting…") + "</p>";
+      }
+    }
+    else if (act === "textBigger") setZoom((S.zoom || 0) + 1);
+    else if (act === "textSmaller") setZoom((S.zoom || 0) - 1);
+    else if (act === "next") go(2);
+    else if (act === "back") go(S.step - 1);
+    else if (act === "rescan") { S.drives = []; S.health = {}; lists(); await loadDrives(); }
+    else if (act === "start") {
+      el.disabled = true;
+      try { await api("start", { source: S.source, dest: S.dest, folder: S.folder, opts: S.opts }); S.status = null; $("#footer").dataset.sig = ""; go(3); }
+      catch (e) { S.plan = { ok: false, errors: (e.data && e.data.errors && e.data.errors.length) ? e.data.errors : [e.message], warnings: (e.data && e.data.warnings) || [] }; notice(); drivesFooter(); }
+    }
+    else if (act === "pause") { S.status = await api("pause", {}); paintCopy(S.status); copyFooter(S.status); }
+    else if (act === "resume") { S.status = await api("resume", {}); paintCopy(S.status); copyFooter(S.status); }
+    else if (act === "stop") { if (confirm(S.mode === "clone" ? "Stop cloning? The bigger drive will be left half finished and won't start up until a clone completes." : "Stop copying? What has been copied so far is kept, and you can continue later.")) { S.status = await api("stop", {}); paintCopy(S.status); copyFooter(S.status); } }
+    else if (act === "toRecover") go(4);
+    else if (act === "toDone") go(5);
+    else if (act === "mode") { S.mode = el.dataset.mode; S.source = S.dest = ""; S.plan = null; S.confirm = ""; S.status = null; go(2); }
+    else if (act === "again") { S.status = null; S.source = S.dest = ""; S.plan = null; S.confirm = ""; $("#footer").dataset.sig = ""; go(1); }
+    else if (act === "startClone") {
+      el.disabled = true;
+      try { await api("clone/start", { source: S.source, dest: S.dest, confirm: S.confirm }); S.status = null; $("#footer").dataset.sig = ""; go(3); }
+      catch (e) { S.plan = { ok: false, errors: (e.data && e.data.errors && e.data.errors.length) ? e.data.errors : [e.message], warnings: (e.data && e.data.warnings) || [] }; notice(); drivesFooter(); }
+    }
+    else if (act === "backCopy") { $("#footer").dataset.sig = ""; go(3); }
+    else if (act === "backRecover") go(4);
+    else if (act === "open") { await loadDir(rel); S.rec.sel = new Set(); recoverPaint(); }
+    else if (act === "crumb") { await loadDir(rel); recoverPaint(); }
+    else if (act === "recoverSel") {
+      const items = [...S.rec.sel].map(k => ({ volume: k.slice(0, k.indexOf(":")), rel: k.slice(k.indexOf(":") + 1) }));
+      S.rec.task = await api("recover/copy", { items }); S.rec.error = ""; recoverPaint(); watchTask();
+    }
+    else if (act === "carve") { S.rec.task = await api("recover/carve", {}); S.rec.error = ""; recoverPaint(); watchTask(); }
+    else if (act === "cancelRec") { await api("recover/cancel", {}); }
+    else if (act === "finish") { await api("recover/close", {}); S.rec.finished = true; viewDone(); }
+  } catch (e) {
+    if (S.step === 4) { S.rec.error = e.message; recoverPaint(); } else alert(e.message);
+  }
+});
+document.addEventListener("input", ev => { if (ev.target.id === "confirmText") { S.confirm = ev.target.value; cloneFooter(); } });
+document.addEventListener("change", ev => {
+  const t = ev.target;
+  if (t.name === "source") { S.source = t.value; const d = S.drives.find(x => x.partitions.some(p => p.path === S.dest)); if (d && d.path === S.source) S.dest = ""; lists(); schedulePlan(); }
+  else if (t.name === "dest") { S.dest = t.value; lists(); schedulePlan(); }
+  else if (t.id === "optStyle") { S.opts.style = t.value; advHint(); schedulePlan(); }
+  else if (t.id === "optRetries") { S.opts.retries = Math.max(0, Math.min(10, parseInt(t.value || "3", 10))); advHint(); schedulePlan(); }
+  else if (t.id === "optFolder") { S.folder = t.value.trim() || "DriveRescue"; advHint(); schedulePlan(); }
+  else if (t.id === "volSel") { S.rec.vol = t.value; S.rec.sel = new Set(); loadDir("").then(recoverPaint); }
+  else if (t.id === "selAll") { for (const e of S.rec.dir.entries) { const k = S.rec.vol + ":" + e.rel; t.checked ? S.rec.sel.add(k) : S.rec.sel.delete(k); } recoverPaint(); }
+  else if (t.dataset && t.dataset.rel !== undefined && t.type === "checkbox") { const k = S.rec.vol + ":" + t.dataset.rel; t.checked ? S.rec.sel.add(k) : S.rec.sel.delete(k); recoverPaint(); }
+});
+
+// Resume wherever the copy has got to, so reloading the page never loses your place.
+setZoom(S.zoom || 0);
+api("system/info").then(r => { if (r.power) document.querySelectorAll(".pw").forEach(b => b.hidden = false); }).catch(() => {});
+(async function boot() {
+  try {
+    const s = await api("status");
+    if (s.state !== "none") { S.mode = s.mode === "clone" ? "clone" : "rescue"; S.status = s; go(3); return; }
+  } catch (e) { /* fall through to the welcome screen */ }
+  go(1);
+})();
+</script>
+</body>
+</html>

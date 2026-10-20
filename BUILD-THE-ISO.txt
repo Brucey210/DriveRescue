@@ -1,0 +1,58 @@
+BUILD THE DRIVE RESCUE ISO
+==========================
+You do this once. It makes a single file, DriveRescue.iso (about 1.4 GB), that you
+write to a USB stick with Rufus. When you start a computer from that stick it opens
+Drive Rescue full screen by itself. Nothing else is needed on the stick: all the
+tools (ddrescue, drive health checker, PhotoRec, NTFS and ext4 tools) are inside.
+
+The ISO is built on top of SystemRescue, a free rescue system that already contains
+those tools. That is why it is built on a free GitHub server: building needs a Linux
+computer with a good internet connection, and GitHub provides one at no cost.
+
+STEP 1 - PUT THE PROJECT ON GITHUB (5 minutes)
+  1. Make a free account at https://github.com and sign in.
+  2. Click the + at the top right, then "New repository". Name it driverescue.
+     Choose Private. Click "Create repository".
+  3. Unzip DriveRescue-source.zip on your PC.
+  4. On the new repository page click "uploading an existing file". Drag in everything
+     from inside the unzipped folder (the folders drive_rescue, iso, tests, usb and
+     .github, and the other files). Click "Commit changes".
+     If the .github folder does not come across: click Add file > Create new file,
+     type  .github/workflows/build-iso.yml  as the name, and paste in the contents of
+     that file from the zip.
+
+STEP 2 - BUILD IT (about 30 to 45 minutes, on GitHub's computer, not yours)
+  1. Click the "Actions" tab. If asked, click "I understand my workflows, enable them".
+  2. Click "Build Drive Rescue ISO" on the left, then "Run workflow", then the green
+     "Run workflow" button.
+  3. Wait for the circle to turn into a green tick. If it shows a red cross, click it,
+     open the red step and send me the last 30 lines of text.
+  4. Click the finished run and scroll to "Artifacts". Click "DriveRescue-iso" to
+     download it. Unzip it to get DriveRescue.iso.
+
+STEP 3 - TRY IT SAFELY FIRST (optional but a good idea)
+  In VirtualBox (free) make a new virtual machine: Linux, 64-bit, 4 GB memory.
+  Add two small extra virtual disks, a "failing" one and a "healthy" one. Start the
+  machine with DriveRescue.iso in the virtual DVD drive. You can click through the
+  whole program there without risking any real drive.
+
+STEP 4 - MAKE THE USB STICK
+  1. Open Rufus, plug in a USB stick of 4 GB or more (it is erased).
+  2. Choose the DriveRescue.iso file. Leave the settings Rufus suggests
+     (Partition scheme MBR, Target BIOS or UEFI, File system FAT32).
+  3. Press START. If Rufus asks, choose "ISO mode". If the stick will not start
+     later, make it again and choose "DD Image mode" instead.
+
+STEP 5 - USE IT
+  1. Plug in the stick and the drives, restart, and pick the USB stick from the
+     start-up menu (F12, F10, F2 or Esc, depending on the PC).
+  2. At the blue menu press Enter. After a short wait Drive Rescue opens full screen.
+  3. Use the Restart / Shut down buttons at the top right when you finish.
+
+GOOD TO KNOW
+  * If the PC will not start from the stick, turn Secure Boot off in its firmware
+    settings. The base system is not signed for Secure Boot.
+  * Not tested on real hardware by me: the build and the boot have to be tried once.
+    Test in VirtualBox first, and use a drive you can afford to lose on the first
+    real run.
+  * To update later: change the files in the repository and run the build again.
