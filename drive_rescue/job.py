@@ -43,11 +43,14 @@ class ImageJob:
         self._samples = deque(maxlen=20)
         self._speed = 0.0
         self._map_cache = (0.0, None)
+        self.features = {}
 
     # ---- control ---------------------------------------------------------
     def start(self):
         if not self.binary:
             raise JobError("ddrescue is missing from this system, so copying can't start.")
+        if not self.features:
+            self.features = ddrescue.detect_features(self.system, self.binary)
         with self._lock:
             if self.state in ("running", "pausing"):
                 return
@@ -137,10 +140,16 @@ class ImageJob:
                 if self._want == "stop":
                     self._finish("stopped", "Stopped. What was copied so far is kept.")
                     return
+                if self._want == "lost":
+                    self._finish("error", "The failing drive disappeared. It may have been unplugged, or it stopped "
+                                          "responding. Check the cable and power, then start the copy again from the "
+                                          "first screen. It carries on from where it stopped; nothing is lost.")
+                    return
                 if rc != 0:
                     tail = strip_ansi(self._tail).strip().splitlines()[-1:] or [""]
                     self._finish("error", f"The copy stopped unexpectedly (code {rc}). The drive may have stopped "
-                                          f"responding. Your progress is saved, so you can resume. {tail[0][:160]}")
+                                          f"responding. Your progress is saved, so you can resume. "
+                                          f"{ddrescue.explain_exit(rc)} {tail[0][:160]}".replace("  ", " ").strip())
                     return
                 self.phase_index += 1
             self._complete()
@@ -149,7 +158,8 @@ class ImageJob:
 
     def _command(self, key):
         return ddrescue.build_command(self.binary, self.plan["source"]["path"], self.plan["image"],
-                                      self.plan["mapfile"], key, self.opts)
+                                      self.plan["mapfile"], key, {**self.opts, **self.features},
+                                      sector=self.plan.get("sector", 512))
 
     def _complete(self):
         self._finish("done", "")
@@ -162,6 +172,7 @@ class ImageJob:
         if self._want:  # Pause or Stop was pressed before the process existed; don't lose it
             self._signal()
         fd = self._proc.stdout.fileno()
+        checked = time.monotonic()
         while True:
             try:
                 chunk = os.read(fd, 4096)
@@ -169,6 +180,13 @@ class ImageJob:
                 break
             if not chunk:
                 break
+            if not self._want and time.monotonic() - checked > 2:
+                checked = time.monotonic()
+                if not os.path.exists(self.plan["source"]["path"]):
+                    # A drive that drops off the bus makes every further read "fail", which would fill
+                    # the progress file with false bad areas and waste hours. Stop at once instead.
+                    self._want = "lost"
+                    self._signal()
             self._tail = (self._tail + chunk.decode("utf-8", "replace"))[-8192:]
             live = ddrescue.parse_status(self._tail)
             if live:

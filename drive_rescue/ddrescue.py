@@ -15,15 +15,24 @@ STYLES = {
 }
 
 
-def build_command(binary, source, image, mapfile, phase, opts):
+def sector_args(sector):
+    """ddrescue assumes 512-byte sectors. With direct disc access (-d) a drive that really uses
+    4096-byte sectors refuses reads that are not a multiple of its own size, so say what it is."""
+    return ["-b", str(int(sector))] if sector and int(sector) != 512 else []
+
+
+def build_command(binary, source, image, mapfile, phase, opts, sector=512):
     """Return the argument list for one ddrescue pass.
 
     The source is only ever the *input* file; ddrescue never writes to it.
     """
     cmd = [binary, "-d", "-p"]  # -d direct disc access, -p preallocate the image
+    cmd += sector_args(sector)
     cmd += STYLES.get(opts.get("style", "gentle"), STYLES["gentle"])
     if phase == "quick":
         cmd += ["-n"]  # no scraping: skip trouble spots for now
+        if opts.get("no_trim"):
+            cmd += ["--no-trim"]  # and don't slowly trim around them yet; the retry pass does that
     elif phase == "retry":
         cmd += ["-r", str(int(opts.get("retries", 3)))]
         if opts.get("direction") == "backward":
@@ -55,3 +64,25 @@ def parse_status(text: str) -> dict:
     if found:
         out["errors"] = int(found[-1])
     return out
+
+
+_FEATURES = {}
+
+
+def detect_features(system, binary):
+    """What this ddrescue build understands, read from its own --help. Unknown means off."""
+    if binary not in _FEATURES:
+        try:
+            _rc, out, err = system.run([binary, "--help"], timeout=10)
+        except Exception:
+            out = err = ""
+        text = (out or "") + (err or "")
+        _FEATURES[binary] = {"no_trim": "--no-trim" in text}
+    return _FEATURES[binary]
+
+
+def explain_exit(code):
+    """A plain sentence for a ddrescue exit status (see its manual: 1 environment, 2 input, 3 bug)."""
+    return {1: "ddrescue could not use one of the drives or files, or was given a bad option.",
+            2: "ddrescue found its progress file damaged or invalid.",
+            3: "ddrescue hit an internal error."}.get(code, "")

@@ -25,9 +25,9 @@ CLONE_PHASES = [
 ]
 
 
-def build_clone_command(binary, source, dest, mapfile, phase, opts):
+def build_clone_command(binary, source, dest, mapfile, phase, opts, sector=512):
     """ddrescue needs -f to write onto a whole drive. Only this mode ever passes it."""
-    cmd = [binary, "-f", "-d"]
+    cmd = [binary, "-f", "-d"] + ddrescue.sector_args(sector)
     if phase == "quick":
         cmd += ["-n"]
     elif phase == "retry":
@@ -282,7 +282,7 @@ class CloneJob(ImageJob):
 
     def _command(self, key):
         return build_clone_command(self.binary, self.plan["source"]["path"], self.plan["image"],
-                                   self.plan["mapfile"], key, self.opts)
+                                   self.plan["mapfile"], key, self.opts, sector=self.plan.get("sector", 512))
 
     def _prepare(self):
         src, dst = self.plan["source"], self.plan["dest_drive"]

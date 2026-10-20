@@ -121,7 +121,8 @@ def make_plan(system, source_path, dest_part_path, folder, opts=None, prepare=Tr
     image = os.path.join(target_dir, base + ".img") if target_dir else None
     mapfile = os.path.join(target_dir, base + ".map") if target_dir else None
     jobfile = os.path.join(target_dir, base + ".job.json") if target_dir else None
-    result.update({"mountpoint": mountpoint, "target_dir": target_dir, "image": image,
+    result.update({"sector": system.sector_size(source["path"]),
+                   "mountpoint": mountpoint, "target_dir": target_dir, "image": image,
                    "mapfile": mapfile, "jobfile": jobfile})
 
     existing, resume = 0, False

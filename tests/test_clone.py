@@ -98,6 +98,13 @@ def check_gpt(case, path, total, expect_last_usable=None):
 
 
 @unittest.skipUnless(have_loop(), "needs root, ext4 tools and loop devices")
+class CloneCommandSectorTests(unittest.TestCase):
+    def test_4k_drives_are_told_their_sector_size(self):
+        cmd = clone.build_clone_command("ddr", "/dev/a", "/dev/b", "m", "quick", {}, sector=4096)
+        self.assertEqual(cmd, ["ddr", "-f", "-d", "-b", "4096", "-n", "/dev/a", "/dev/b", "m"])
+        self.assertNotIn("-b", clone.build_clone_command("ddr", "/dev/a", "/dev/b", "m", "quick", {}))
+
+
 class ResizeTests(unittest.TestCase):
     SRC_MB, DST_MB = 64, 192
 
