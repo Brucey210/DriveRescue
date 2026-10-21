@@ -67,12 +67,27 @@ def ensure_mounted_rw(system, part):
     return mp, None
 
 
-def make_plan(system, source_path, dest_part_path, folder, opts=None, prepare=True):
-    """Check everything. With prepare=True the destination is mounted and its folder created."""
+def network_destination(mountpoint, label):
+    """Stand-ins shaped like a drive and partition, for a shared folder that is already mounted."""
+    part = {"path": "network", "name": "network", "size": 0, "size_text": "", "fstype": "network", "label": label,
+            "mountpoints": [mountpoint], "dest_ok": True, "dest_reason": ""}
+    drive = {"path": "network", "name": label, "model": "", "serial": "", "size": 0, "size_text": "", "kind": "Network folder",
+             "transport": "", "is_boot": False, "partitions": [part]}
+    return drive, part
+
+
+def make_plan(system, source_path, dest_part_path, folder, opts=None, prepare=True, network=None):
+    """Check everything. With prepare=True the destination is mounted and its folder created.
+    `network` ({"mountpoint", "label"}) means the copy goes to a shared folder that is already mounted."""
     errors, warnings = [], []
     drives = list_drives(system)
     source = find_drive(drives, source_path)
-    dest_drive, dest_part = find_partition(drives, dest_part_path)
+    if network:
+        dest_drive, dest_part = network_destination(network["mountpoint"], network["label"])
+        warnings.append("The copy will be saved over the network. That is slower than a drive plugged in directly, "
+                        "and the connection must stay up the whole time. If it drops, you can resume.")
+    else:
+        dest_drive, dest_part = find_partition(drives, dest_part_path)
 
     if source is None:
         errors.append("The failing drive was not found. Rescan and pick it again.")
@@ -80,6 +95,8 @@ def make_plan(system, source_path, dest_part_path, folder, opts=None, prepare=Tr
         errors.append("That is the rescue USB stick this program runs from. Pick the failing drive instead.")
     if dest_part is None:
         errors.append("The healthy drive was not found. Rescan and pick it again.")
+    elif network:
+        pass
     elif dest_drive["is_boot"]:
         errors.append("The rescue USB stick can't be used to save the copy. Pick the healthy drive.")
     if source and dest_drive and source["path"] == dest_drive["path"]:
@@ -109,13 +126,20 @@ def make_plan(system, source_path, dest_part_path, folder, opts=None, prepare=Tr
             return result
     else:
         mountpoint = next((m for m in dest_part["mountpoints"]), None)
+        if mountpoint is None and dest_part["size"] < source["size"] + SPACE_MARGIN:
+            # Not mounted yet, so free space can't be read, but a partition smaller than the failing
+            # drive can never hold the copy. Say so now rather than after the drive is opened.
+            errors.append(f"The healthy drive's partition ({dest_part['size_text']}) is smaller than the failing "
+                          f"drive ({source['size_text']}), so the copy can't fit. Pick a bigger one.")
+            return result
 
     base = image_basename(source)
     target_dir = os.path.join(mountpoint, result["folder"]) if mountpoint else None
     image = os.path.join(target_dir, base + ".img") if target_dir else None
     mapfile = os.path.join(target_dir, base + ".map") if target_dir else None
     jobfile = os.path.join(target_dir, base + ".job.json") if target_dir else None
-    result.update({"mountpoint": mountpoint, "target_dir": target_dir, "image": image,
+    result.update({"sector": system.sector_size(source["path"]),
+                   "mountpoint": mountpoint, "target_dir": target_dir, "image": image,
                    "mapfile": mapfile, "jobfile": jobfile})
 
     existing, resume = 0, False

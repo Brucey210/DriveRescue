@@ -9,6 +9,42 @@ import shutil
 import subprocess
 
 
+# A drive that failed was usually not shut down cleanly, so its journal or log is dirty. These are the
+# read-only ways to open such a filesystem, tried in order. Every one of them is read-only: none can
+# replay a journal or write anything back to the copy.
+RO_OPTIONS = {
+    "ext2": ["ro,noload"], "ext3": ["ro,noload"], "ext4": ["ro,noload"],
+    "xfs": ["ro,norecovery,nouuid"],
+    "btrfs": ["ro", "ro,rescue=usebackuproot", "ro,usebackuproot", "ro,rescue=all"],
+    "hfsplus": ["ro", "ro,force"],
+}
+
+
+def mount_attempts(device, mountpoint, fstype=None, read_only=False):
+    """The mount commands to try, most careful first."""
+    if not fstype:
+        return [["mount", "-o", "ro" if read_only else "rw", device, mountpoint]]
+    if fstype == "ntfs":
+        if read_only:  # ntfs3 first; ntfs-3g can open volumes Windows left hibernated or unclean
+            variants = [("ntfs3", "ro"), ("ntfs-3g", "ro,norecover"), ("ntfs-3g", "ro")]
+        else:
+            variants = [("ntfs3", "rw"), ("ntfs-3g", "rw")]
+        return [["mount", "-t", t, "-o", o, device, mountpoint] for t, o in variants]
+    options = RO_OPTIONS.get(fstype, ["ro"]) if read_only else ["rw"]
+    return [["mount", "-t", fstype, "-o", o, device, mountpoint] for o in options]
+
+
+def network_mount_attempts(kind, address, share, mountpoint, credfile=None):
+    """Mount commands for a shared folder on another computer, most modern first."""
+    if kind == "smb":
+        auth = f"credentials={credfile}" if credfile else "guest"
+        return [["mount", "-t", "cifs", f"//{address}/{share}", mountpoint, "-o", f"{auth},vers={v},iocharset=utf8"]
+                for v in ("3.0", "2.1")] + [["mount", "-t", "cifs", f"//{address}/{share}", mountpoint, "-o", f"{auth},iocharset=utf8"]]
+    if kind == "nfs":
+        return [["mount", "-t", "nfs", "-o", o, f"{address}:{share}", mountpoint] for o in ("vers=4,rw", "vers=3,rw,nolock")]
+    raise ValueError(f"unknown kind {kind!r}")
+
+
 class System:
     """Real system access (run as root on the rescue USB)."""
 
@@ -62,20 +98,15 @@ class System:
         rc, _out, err = self.run(["blockdev", "--setro", path], timeout=10)
         return rc == 0, err.strip()
 
+    def set_readwrite(self, path):
+        """Undo set_readonly. Only the clone target is ever made writable again."""
+        rc, _out, err = self.run(["blockdev", "--setrw", path], timeout=10)
+        return rc == 0, err.strip()
+
     # ----- mounting -------------------------------------------------------
     def mount(self, device, mountpoint, fstype=None, read_only=False):
         os.makedirs(mountpoint, exist_ok=True)
-        opts = "ro" if read_only else "rw"
-        if read_only and fstype in ("ext2", "ext3", "ext4"):
-            opts += ",noload"  # do not replay the journal on a damaged image
-        attempts = []
-        if fstype == "ntfs":
-            attempts = [["mount", "-t", "ntfs3", "-o", opts, device, mountpoint],
-                        ["mount", "-t", "ntfs-3g", "-o", opts, device, mountpoint]]
-        elif fstype:
-            attempts = [["mount", "-t", fstype, "-o", opts, device, mountpoint]]
-        else:
-            attempts = [["mount", "-o", opts, device, mountpoint]]
+        attempts = mount_attempts(device, mountpoint, fstype, read_only)
         last = ""
         for cmd in attempts:
             rc, _out, err = self.run(cmd, timeout=60)
@@ -83,6 +114,31 @@ class System:
                 return True, ""
             last = err.strip() or f"mount exited with code {rc}"
         return False, last
+
+    def mount_network(self, kind, address, share, mountpoint, user="", password=""):
+        """Mount a shared folder. The password goes in a private file that exists only for the mount,
+        never on the command line where other programs could read it."""
+        os.makedirs(mountpoint, exist_ok=True)
+        credfile = None
+        try:
+            if kind == "smb" and user:
+                import tempfile
+                fd, credfile = tempfile.mkstemp(prefix="dr-cred-", dir="/run" if os.path.isdir("/run") else None)
+                with os.fdopen(fd, "w") as fh:
+                    fh.write(f"username={user}\npassword={password}\n")
+            last = ""
+            for cmd in network_mount_attempts(kind, address, share, mountpoint, credfile):
+                rc, _out, err = self.run(cmd, timeout=45)
+                if rc == 0:
+                    return True, ""
+                last = err.strip() or f"mount exited with code {rc}"
+            return False, last
+        finally:
+            if credfile:
+                try:
+                    os.remove(credfile)
+                except OSError:
+                    pass
 
     def umount(self, mountpoint):
         rc, _out, err = self.run(["umount", mountpoint], timeout=60)
@@ -108,6 +164,29 @@ class System:
         cmd = ["systemctl", "poweroff"] if action == "poweroff" else ["systemctl", "reboot"]
         rc, _out, err = self.run(cmd, timeout=30)
         return rc == 0, err.strip()
+
+    def firmware(self):
+        """How this computer started: "uefi" or "bios"."""
+        return "uefi" if os.path.isdir("/sys/firmware/efi") else "bios"
+
+    def used_bytes(self, part, scratch):
+        """Space used by the files on a partition, or None when it can't be told. Reads only: a partition
+        that is not mounted is opened read-only for a moment."""
+        mounted = [m for m in part.get("mountpoints") or [] if m]
+        mp, opened = (mounted[0], False) if mounted else (scratch, False)
+        if not mounted:
+            ok, _msg = self.mount(part["path"], mp, part.get("fstype") or None, read_only=True)
+            if not ok:
+                return None
+            opened = True
+        try:
+            st = os.statvfs(mp)
+            return (st.f_blocks - st.f_bfree) * st.f_frsize
+        except OSError:
+            return None
+        finally:
+            if opened:
+                self.umount(mp)
 
     def sector_size(self, path):
         """Logical sector size in bytes (512 for plain files and when the drive won't say)."""

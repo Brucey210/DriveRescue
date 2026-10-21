@@ -47,7 +47,9 @@ class AppCase(unittest.TestCase):
 class ActionTests(AppCase):
     def test_clean_opts_clamps(self):
         o = server.clean_opts({"style": "evil", "retries": 999, "direction": "x"})
-        self.assertEqual(o, {"style": "gentle", "retries": 10, "direction": "forward"})
+        self.assertEqual(o, {"style": "gentle", "retries": 10, "direction": "forward", "pause_after_quick": False})
+        self.assertTrue(server.clean_opts({"pause_after_quick": True})["pause_after_quick"])
+        self.assertFalse(server.clean_opts({"pause_after_quick": "yes"})["pause_after_quick"])
         self.assertEqual(server.clean_opts("junk")["retries"], 3)
 
     def test_drives_and_unknown_route(self):
@@ -65,6 +67,19 @@ class ActionTests(AppCase):
         self.assertTrue(p["ok"], p)
         bad = self.call("POST", "plan", {"source": self.src, "dest": "/dev/fake-sdc1"})
         self.assertFalse(bad["ok"])
+
+    def test_unmounted_partition_smaller_than_the_source_is_refused_early(self):
+        def shrink(devs):
+            part = devs[1]["children"][0]
+            part["size"], part["mountpoints"] = 1024 * 1024, []
+        self.sys.tweak = shrink
+        p = self.call("POST", "plan", {"source": self.src, "dest": self.dst})
+        self.assertFalse(p["ok"])
+        self.assertIn("can't fit", " ".join(p["errors"]))
+
+    def test_unmounted_partition_big_enough_still_plans(self):
+        self.sys.tweak = lambda devs: devs[1]["children"][0].update(mountpoints=[])
+        self.assertTrue(self.call("POST", "plan", {"source": self.src, "dest": self.dst})["ok"])
 
     def test_start_refused_gives_errors(self):
         with self.assertRaises(server.ApiError) as cm:
@@ -116,6 +131,23 @@ class CloneApiTests(unittest.TestCase):
         self.assertTrue(p["ok"])
         self.assertEqual(p["dest_contents"][0]["name"], "Old stuff")
         self.assertNotIn("mapfile", p)
+
+    def test_warns_when_the_rescued_copy_is_saved_on_the_target(self):
+        self.app.plan = {"image": "/mnt/x/failing.img", "dest_drive": {"path": self.sys.dest_file}}
+        warned = " ".join(self.call("clone/plan", self.body)["warnings"])
+        self.assertIn("rescued copy", warned)
+        self.app.plan = {"image": "/mnt/x/failing.img", "dest_drive": {"path": "/dev/other"}}
+        self.assertNotIn("rescued copy", " ".join(self.call("clone/plan", self.body)["warnings"]))
+        self.app.plan = {"mode": "clone", "image": self.sys.dest_file, "dest_drive": {"path": self.sys.dest_file}}
+        self.assertNotIn("rescued copy", " ".join(self.call("clone/plan", self.body)["warnings"]))
+
+    def test_a_smaller_target_reports_whether_the_files_would_fit(self):
+        self.sys.used_bytes = lambda part, scratch: 1024 * 1024
+        GIB = 1024**3
+        self.sys.tweak = lambda devs: (devs[0].update(size=200 * GIB), devs[1].update(size=100 * GIB))
+        p = self.call("clone/plan", self.body)
+        self.assertFalse(p["ok"])
+        self.assertTrue(p["shrink"]["known"] and p["shrink"]["fits"])
 
     def test_start_needs_the_typed_confirmation(self):
         for word in ("", "yes", "erase me"):

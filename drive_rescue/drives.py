@@ -1,4 +1,6 @@
 """Finding drives and judging their health."""
+import re
+
 from .util import human_size
 
 # Filesystems Linux can write to that are safe for one very large file.
@@ -15,10 +17,16 @@ def _mountpoints(dev):
     return [m for m in (mps or []) if m]
 
 
+# SystemRescue's disc is labelled RESCUE plus its version digits (RESCUE1302), on a FAT32 stick or an
+# ISO9660 disc. A person's own drive called "Rescue backup" must not be mistaken for it.
+_BOOT_LABEL = re.compile(r"^(RESCUE\d{3,5}|ARCHISO.*)$", re.IGNORECASE)
+_BOOT_FS = {"", "vfat", "iso9660", "udf"}
+
+
 def _is_boot_media(dev):
     """The rescue USB the program is running from must never be picked."""
-    label = (dev.get("label") or "").upper()
-    if label.startswith("RESCUE") or label.startswith("ARCHISO"):
+    label = (dev.get("label") or "").strip()
+    if _BOOT_LABEL.match(label) and (dev.get("fstype") or "").lower() in _BOOT_FS:
         return True
     return any(m.startswith("/run/archiso") for m in _mountpoints(dev))
 

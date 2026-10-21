@@ -102,6 +102,23 @@ class HelperTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             ddrescue.build_command("ddr", "x", "y", "z", "nonsense", {})
 
+    def test_drives_with_4k_sectors_are_told_so(self):
+        q = ddrescue.build_command("ddr", "/dev/sda", "a.img", "a.map", "quick", {"style": "fast"}, sector=4096)
+        self.assertEqual(q, ["ddr", "-d", "-p", "-b", "4096", "-n", "/dev/sda", "a.img", "a.map"])
+        plain = ddrescue.build_command("ddr", "/dev/sda", "a.img", "a.map", "quick", {"style": "fast"}, sector=512)
+        self.assertNotIn("-b", plain)
+
+    def test_quick_pass_skips_trimming_only_when_ddrescue_supports_it(self):
+        on = ddrescue.build_command("ddr", "x", "y", "z", "quick", {"style": "fast", "no_trim": True})
+        self.assertIn("--no-trim", on)
+        retry = ddrescue.build_command("ddr", "x", "y", "z", "retry", {"style": "fast", "no_trim": True})
+        self.assertNotIn("--no-trim", retry)  # the retry pass is where trimming happens
+        self.assertNotIn("--no-trim", ddrescue.build_command("ddr", "x", "y", "z", "quick", {"style": "fast"}))
+
+    def test_exit_codes_are_explained(self):
+        self.assertIn("drives or files", ddrescue.explain_exit(1))
+        self.assertEqual(ddrescue.explain_exit(99), "")
+
     def test_the_failing_drive_is_only_ever_the_input(self):
         for phase in ("quick", "retry"):
             cmd = ddrescue.build_command("ddr", "/dev/sda", "/mnt/b/a.img", "/mnt/b/a.map", phase, {})
@@ -426,6 +443,32 @@ class JobTests(Base):
         os.environ.pop("FAKE_FAIL")
         job.resume()
         self.assertEqual(wait_for(job, self.TERMINAL), "done")
+
+    def test_features_are_read_from_ddrescue_itself(self):
+        ddrescue._FEATURES.clear()
+        self.assertEqual(ddrescue.detect_features(self.fs, SHIM), {"no_trim": True})
+        ddrescue._FEATURES.clear()
+        self.assertEqual(ddrescue.detect_features(self.fs, "/nonexistent/ddrescue"), {"no_trim": False})
+        ddrescue._FEATURES.clear()
+
+    def test_the_job_uses_the_drives_sector_size_and_no_trim(self):
+        job = self.job()
+        job.plan["sector"] = 4096
+        job.features = {"no_trim": True}
+        cmd = job._command("quick")
+        self.assertEqual(cmd[cmd.index("-b") + 1], "4096")
+        self.assertIn("--no-trim", cmd)
+
+    def test_a_drive_that_disappears_stops_the_copy_with_a_clear_message(self):
+        os.environ["FAKE_DELAY"] = "0.05"
+        job = self.job()
+        job.start()
+        end = time.time() + 20
+        while job.snapshot()["percent"] < 3 and time.time() < end:
+            time.sleep(0.05)
+        os.remove(self.fs.source_file)  # unplugged
+        self.assertEqual(wait_for(job, self.TERMINAL, timeout=30), "error")
+        self.assertIn("disappeared", job.snapshot()["message"])
 
     def test_missing_ddrescue_is_explained(self):
         class NoTool(Tweaked):
