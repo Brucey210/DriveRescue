@@ -68,6 +68,67 @@ def _label_for(drive, layout, slot):
     return p.get("name") or f"Partition {slot + 1}"
 
 
+def boot_check(layout, firmware=None):
+    """Will a computer start up from this drive? Judged from the partition table, which a clone keeps.
+    `firmware` is how the computer running this program started ("uefi" or "bios"), if known."""
+    kind = layout.get("kind")
+    if kind in (None, "none"):
+        return {"mode": "unknown", "level": "info",
+                "text": "There is no partition table to read, so it can't be said whether this drive starts up a computer."}
+    parts = layout.get("parts") or []
+    if kind == "gpt":
+        if any(p["type"] == partitions.GPT_ESP for p in parts):
+            note = ("It has a UEFI boot partition, so it starts up on any computer that boots in UEFI mode "
+                    "(almost every PC made in the last ten years).")
+            if firmware == "bios":
+                note += " The computer you are using now started in older BIOS mode, so check your firmware settings if you test the clone here."
+            return {"mode": "uefi", "level": "ok", "text": note}
+        if any(p["type"] == partitions.GPT_BIOS_BOOT for p in parts):
+            return {"mode": "legacy", "level": "ok",
+                    "text": "It has a legacy BIOS boot area, so it starts up on computers in BIOS (legacy) mode."}
+        return {"mode": "data", "level": "info",
+                "text": "It has no boot partition, so it is a data drive. It holds your files but won't start up a computer."}
+    if any(p.get("active") for p in parts):
+        note = ("One partition is marked bootable, so it starts up on computers in BIOS (legacy / CSM) mode. "
+                "Modern UEFI-only computers can't start from it.")
+        if firmware == "uefi":
+            note += " The computer you are using now started in UEFI mode, so turn on Legacy/CSM in its firmware settings to test the clone here."
+        return {"mode": "legacy", "level": "warn" if firmware == "uefi" else "ok", "text": note}
+    return {"mode": "data", "level": "info",
+            "text": "No partition is marked bootable, so it is a data drive. It holds your files but won't start up a computer."}
+
+
+def used_estimate(system, source):
+    """Total bytes of files on the source's partitions, or None if any of them can't be measured."""
+    total = 0
+    scratch = os.path.join(MOUNT_ROOT, "clone-measure")
+    for part in source["partitions"]:
+        if not part.get("fstype"):
+            continue
+        used = system.used_bytes(part, scratch)
+        if used is None:
+            return None
+        total += used
+    return total
+
+
+def shrink_check(system, source, dest):
+    """The target is smaller than the source. Would the files at least fit? This does not shrink
+    anything: it tells the person whether shrinking the main partition first would make a clone possible."""
+    used = used_estimate(system, source)
+    if used is None:
+        return {"known": False, "fits": False, "used_text": "", "text": ""}
+    room = int(dest["size"] * 0.97) - 4 * 1024 * 1024  # headroom for the table, alignment and filesystem overhead
+    fits = used <= room
+    return {"known": True, "fits": fits, "used_text": human_size(used), "text": (
+        f"The files on this drive only use about {human_size(used)}, which would fit on the {dest['size_text']} target. "
+        "To clone onto a smaller drive, first shrink the main partition on the original drive to a smaller size "
+        "(GParted on this stick, or Disk Management in Windows), then come back and clone it."
+        if fits else
+        f"The files on this drive use about {human_size(used)}, which is more than the {dest['size_text']} target "
+        "can hold. Pick a bigger target, or remove files first.")}
+
+
 def preview_layout(system, source, dest_size, sector):
     """What will happen to the partitions on a drive of dest_size. Reads the source table only."""
     try:
@@ -75,13 +136,14 @@ def preview_layout(system, source, dest_size, sector):
     except OSError as err:
         return {"known": False, "extends": False, "text": f"Could not read the partition table: {err}"}
     if layout["kind"] == "none":
-        return {"known": False, "extends": False, "kind": "none",
+        return {"known": False, "extends": False, "kind": "none", "boot": boot_check(layout, system.firmware()),
                 "text": "No partition table was found on this drive. It will be copied as it is and the extra "
                         "room will stay unused."}
     fstypes = _fstypes_from_drive(source, layout)
     plan = partitions.plan_growth(layout, dest_size // sector, fstypes)
     info = {"known": True, "kind": layout["kind"], "extends": plan["extends"], "reason": plan["reason"],
-            "unallocated": plan.get("unallocated_sectors", 0) * sector}
+            "unallocated": plan.get("unallocated_sectors", 0) * sector,
+            "boot": boot_check(layout, system.firmware())}
     if plan["extends"]:
         slot, new_end = plan["grow"]
         p = next(x for x in layout["parts"] if x["slot"] == slot)
@@ -120,6 +182,9 @@ def make_clone_plan(system, source_path, dest_path):
     if dest["size"] < source["size"]:
         errors.append(f"The target is smaller than the drive being copied "
                       f"({dest['size_text']} against {source['size_text']}). It must be the same size or bigger.")
+        result["shrink"] = shrink_check(system, source, dest)
+        if result["shrink"]["text"]:
+            errors.append(result["shrink"]["text"])
     elif dest["size"] == source["size"]:
         warnings.append("The target is exactly the same size, so there is no extra room to gain.")
     ssz, dsz = system.sector_size(source["path"]), system.sector_size(dest["path"])
@@ -265,6 +330,7 @@ def finish_layout(system, dest, progress=None):
     last = max(p["end"] for p in new["parts"]) if new["parts"] else 0
     free = max(0, partitions.usable_last(new, total) - last) * sector
     res["unallocated_text"] = human_size(free) if free > 2 * 1024 * 1024 else ""
+    res["boot"] = boot_check(new, system.firmware())
     if plan.get("reason"):
         res["warnings"].append(plan["reason"])
     system.run(["blockdev", "--rereadpt", dest], timeout=30)
@@ -334,6 +400,6 @@ class CloneJob(ImageJob):
                                                   snap["complete"] else ("skipped" if st == "done" else "waiting"))
         snap["phases"] = [{"key": k, "title": t, "note": n, "status": s}
                           for (k, t, n), s in zip(CLONE_PHASES, (copy, lay))]
-        snap.update({"mode": "clone", "result": self.result, "image": self.plan["image"],
+        snap.update({"mode": "clone", "result": self.result, "outlook": None, "image": self.plan["image"],
                      "dest_name": self.plan["dest_drive"]["name"], "dest_size_text": self.plan["dest_drive"]["size_text"]})
         return snap

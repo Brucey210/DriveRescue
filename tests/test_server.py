@@ -47,7 +47,9 @@ class AppCase(unittest.TestCase):
 class ActionTests(AppCase):
     def test_clean_opts_clamps(self):
         o = server.clean_opts({"style": "evil", "retries": 999, "direction": "x"})
-        self.assertEqual(o, {"style": "gentle", "retries": 10, "direction": "forward"})
+        self.assertEqual(o, {"style": "gentle", "retries": 10, "direction": "forward", "pause_after_quick": False})
+        self.assertTrue(server.clean_opts({"pause_after_quick": True})["pause_after_quick"])
+        self.assertFalse(server.clean_opts({"pause_after_quick": "yes"})["pause_after_quick"])
         self.assertEqual(server.clean_opts("junk")["retries"], 3)
 
     def test_drives_and_unknown_route(self):

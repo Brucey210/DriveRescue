@@ -92,3 +92,36 @@ def build_cells(mf: Mapfile, total: int, n: int) -> list:
         else:
             cells.append("waiting")
     return cells
+
+
+def outlook(mf: Mapfile, total: int):
+    """A plain-language estimate of how the rescue is likely to end, from what has been read so far.
+    Judged on the area already tried, so it is meaningful once the quick pass has gone over the drive."""
+    sums = summarize(mf, total)
+    tried = sums["finished"] + sums["skipped"]
+    if total <= 0 or tried <= 0:
+        return None
+    bad = [size for _pos, size, st in mf.segments if st in SKIPPED and size > 0]
+    share = 100.0 * sums["skipped"] / tried
+    info = {"bad_bytes": sums["skipped"], "bad_areas": len(bad), "largest_bad": max(bad) if bad else 0,
+            "good_pct": round(100.0 * sums["finished"] / total, 2), "unread_bytes": sums["untried"]}
+    if sums["skipped"] == 0:
+        info.update(level="excellent", title="Excellent",
+                    text="Nothing unreadable has turned up so far. Everything read cleanly.")
+    elif share <= 0.01 or sums["skipped"] <= 1024 * 1024:
+        info.update(level="excellent", title="Excellent",
+                    text="Almost everything read cleanly. The gaps are tiny, so nearly all files should open normally.")
+    elif share <= 0.5:
+        info.update(level="good", title="Very good",
+                    text="The great majority is safe. A few files may be damaged where the drive could not be read, "
+                         "and the retry pass may win some of that back.")
+    elif share <= 5:
+        info.update(level="fair", title="Fair",
+                    text="A noticeable part could not be read. Expect some damaged files. Retrying is worth the time, "
+                         "and a file scan can find files whose folders were lost.")
+    else:
+        info.update(level="poor", title="Heavy damage",
+                    text="A large part of the drive is not reading. Many files will be damaged. Let the retry pass run, "
+                         "and if the files are very valuable, consider a professional recovery service before "
+                         "stressing the drive further.")
+    return info

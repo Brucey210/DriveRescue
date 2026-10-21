@@ -19,6 +19,7 @@ MAX_MOVE_BYTES = 8 * 1024**3  # only a small recovery partition is ever moved
 
 GPT_RECOVERY = "de94bba4-06d1-4d40-a16a-bfd50179d6ac"
 GPT_ESP = "c12a7328-f81f-11d2-ba4b-00a0c93ec93b"
+GPT_BIOS_BOOT = "21686148-6449-6e6f-744e-656564454649"
 MBR_RECOVERY = 0x27
 MBR_EXTENDED = (0x05, 0x0F, 0x85)
 MBR_MAX_SECTORS = 0xFFFFFFFF
@@ -112,7 +113,8 @@ def read_layout(path, sector=512):
         ptype = e[4]
         start, count = struct.unpack_from("<II", e, 8)
         if ptype and count:
-            parts.append({"slot": i, "start": start, "end": start + count - 1, "type": ptype, "name": ""})
+            parts.append({"slot": i, "start": start, "end": start + count - 1, "type": ptype, "name": "",
+                          "active": e[0] == 0x80})
     parts.sort(key=lambda p: p["start"])
     layout.update({"kind": "mbr", "parts": parts, "mbr": mbr})
     return layout

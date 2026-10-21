@@ -44,6 +44,9 @@ class ImageJob:
         self._speed = 0.0
         self._map_cache = (0.0, None)
         self.features = {}
+        self._t0 = None      # when the current run started
+        self._elapsed = 0.0  # time spent running in earlier runs
+        self._peak = 0.0     # best speed seen, to tell when the drive is slowing down
 
     # ---- control ---------------------------------------------------------
     def start(self):
@@ -113,6 +116,7 @@ class ImageJob:
 
     def _begin_thread(self):
         self._want = None
+        self._t0 = self.clock()
         self.state = "running"
         self.message = ""
         self._thread = threading.Thread(target=self._run, daemon=True)
@@ -152,6 +156,12 @@ class ImageJob:
                                           f"{ddrescue.explain_exit(rc)} {tail[0][:160]}".replace("  ", " ").strip())
                     return
                 self.phase_index += 1
+                if (key == "quick" and self.opts.get("pause_after_quick") and self.phase_index < len(keys)
+                        and self._summary()["skipped"] > 0):
+                    self._finish("paused", "The quick copy is finished. Everything that reads easily is now safe in the "
+                                           "image, so you can get your important files out now. Press Resume to go "
+                                           "back for the difficult parts.")
+                    return
             self._complete()
         except Exception as exc:  # never let the thread die silently
             self._finish("error", f"Unexpected problem: {exc}")
@@ -198,6 +208,9 @@ class ImageJob:
 
     def _finish(self, state, message):
         self._map_cache = (0.0, None)
+        if self._t0 is not None:
+            self._elapsed += max(0.0, self.clock() - self._t0)
+            self._t0 = None
         with self._lock:
             self.state = state
             self.message = message
@@ -237,6 +250,10 @@ class ImageJob:
             self._speed = speed if not self._speed else self._speed * 0.7 + speed * 0.3
         elif self.state != "running":
             self._speed = 0.0
+        self._peak = max(self._peak, self._speed)
+        slow = (self.state == "running" and self._peak > 0 and 0 < self._speed < self._peak * 0.15
+                and self._peak > 5 * 1024 * 1024)
+        elapsed = self._elapsed + (max(0.0, now - self._t0) if self._t0 is not None else 0.0)
         remaining = max(0, self.size - finished - sums["skipped"])
         eta = remaining / self._speed if self._speed > 0 else None
         keys = self._phase_keys()
@@ -269,6 +286,12 @@ class ImageJob:
             "eta_text": human_duration(eta) if self.state == "running" else "-",
             "skipped": sums["skipped"], "skipped_text": human_size(sums["skipped"]),
             "complete": sums["finished"] >= self.size and self.size > 0,
+            "elapsed_text": human_duration(elapsed) if elapsed >= 60 else ("under a minute" if elapsed > 0 else "-"),
+            "elapsed": int(elapsed),
+            "speed_note": ("The drive has slowed right down. That is normal in damaged areas, and a sign it is "
+                           "struggling. Keep going, but don't move or knock it.") if slow else "",
+            "quick_done": self.phase_index >= 1 or self.state == "done",
+            "outlook": (mapfile.outlook(mf, self.size) if (self.phase_index >= 1 or self.state == "done") else None),
             "cells": mapfile.build_cells(mf, self.size, self.cells),
             "phases": phases,
             "image": self.plan["image"],

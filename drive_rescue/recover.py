@@ -4,6 +4,7 @@ The image is opened read-only. Files are browsed and copied out to a folder on
 the healthy drive. If the filesystem inside the image is too damaged to browse,
 a file scan (PhotoRec) can carve out files by type instead.
 """
+import base64
 import errno
 import os
 import subprocess
@@ -14,6 +15,14 @@ from .plan import MOUNT_ROOT
 from .util import human_size
 
 MAX_ENTRIES = 3000
+PREVIEW_IMAGE_MAX = 6 * 1024 * 1024
+PREVIEW_TEXT_BYTES = 8 * 1024
+IMAGE_TYPES = {  # extension -> (mime, the bytes a real file of that kind starts with)
+    "jpg": ("image/jpeg", (b"\xff\xd8\xff",)), "jpeg": ("image/jpeg", (b"\xff\xd8\xff",)),
+    "png": ("image/png", (b"\x89PNG\r\n\x1a\n",)), "gif": ("image/gif", (b"GIF87a", b"GIF89a")),
+    "webp": ("image/webp", (b"RIFF",)), "bmp": ("image/bmp", (b"BM",)),
+}
+TEXT_EXTS = {"txt", "md", "csv", "log", "json", "xml", "ini", "cfg", "conf", "yml", "yaml", "tsv", "rtf", "srt"}
 
 
 class RecoverError(Exception):
@@ -125,6 +134,41 @@ class Recovery:
                                f"This folder can't be read: {err.strerror}")
         entries.sort(key=lambda x: (not x["is_dir"], x["name"].lower()))
         return {"rel": rel.strip("/"), "entries": entries, "truncated": len(entries) >= MAX_ENTRIES}
+
+    # ---- looking before recovering -----------------------------------------
+    def preview(self, volume_id, rel):
+        """A look at one file without copying it: a picture, the start of a text file, or just its size.
+        Never follows links, and never reads more than a few MB."""
+        vol = self._volume(volume_id)
+        path = safe_join(vol["mountpoint"], rel)
+        if os.path.islink(path) or not os.path.isfile(path):
+            raise RecoverError("There is nothing to preview here.")
+        ext = os.path.splitext(path)[1].lower().lstrip(".")
+        try:
+            size = os.path.getsize(path)
+            if ext in IMAGE_TYPES:
+                mime, magics = IMAGE_TYPES[ext]
+                if size > PREVIEW_IMAGE_MAX:
+                    return {"kind": "none", "size_text": human_size(size), "message": "This picture is too large to preview."}
+                with open(path, "rb") as fh:
+                    data = fh.read(PREVIEW_IMAGE_MAX + 1)
+                if not data.startswith(magics):
+                    return {"kind": "none", "size_text": human_size(size),
+                            "message": "This file is damaged, so it can't be shown."}
+                return {"kind": "image", "mime": mime, "size_text": human_size(size),
+                        "data": base64.b64encode(data).decode("ascii")}
+            if ext in TEXT_EXTS:
+                with open(path, "rb") as fh:
+                    head = fh.read(PREVIEW_TEXT_BYTES)
+                if b"\0" in head:
+                    return {"kind": "none", "size_text": human_size(size), "message": "This file can't be shown as text."}
+                return {"kind": "text", "size_text": human_size(size), "truncated": size > PREVIEW_TEXT_BYTES,
+                        "text": head.decode("utf-8", "replace")}
+            return {"kind": "none", "size_text": human_size(size), "message": "There is no preview for this kind of file."}
+        except OSError as err:
+            if err.errno == errno.EIO:
+                return {"kind": "none", "size_text": "", "message": "This file is in a damaged area and can't be read."}
+            raise RecoverError(f"This file can't be read: {err.strerror}")
 
     # ---- copying out -----------------------------------------------------
     def start_copy(self, items):
