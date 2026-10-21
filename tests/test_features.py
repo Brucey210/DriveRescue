@@ -187,6 +187,29 @@ class ShrinkTests(unittest.TestCase):
             sysm.cleanup()
 
 
+class UsedEstimateTests(unittest.TestCase):
+    SOURCE = {"partitions": [{"path": "/dev/x1", "fstype": "ntfs", "mountpoints": []}]}
+
+    def test_a_failure_while_measuring_means_unknown_not_a_crash(self):
+        class Broken(FakeSystem):
+            def used_bytes(self, part, scratch):
+                raise PermissionError(13, "Permission denied")
+        sysm = Broken()
+        try:
+            self.assertIsNone(clone.used_estimate(sysm, self.SOURCE))
+        finally:
+            sysm.cleanup()
+
+    def test_partitions_are_added_up(self):
+        sysm = FakeSystem()
+        sysm.used_bytes = lambda part, scratch: 5
+        try:
+            src = {"partitions": self.SOURCE["partitions"] * 2 + [{"path": "/dev/x9", "fstype": "", "mountpoints": []}]}
+            self.assertEqual(clone.used_estimate(sysm, src), 10)
+        finally:
+            sysm.cleanup()
+
+
 class NetworkTests(unittest.TestCase):
     def test_mount_commands(self):
         smb = network_mount_attempts("smb", "nas.local", "Backup", "/mnt/n", "/run/cred")

@@ -54,6 +54,9 @@ class FakeSystem(System):
         self.calls.append(("setro", path))
         return True, ""
 
+    def used_bytes(self, part, scratch):
+        return None  # tests never mount anything for real just to measure it
+
     def set_readwrite(self, path):
         self.calls.append(("setrw", path))
         return True, ""
