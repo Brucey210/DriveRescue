@@ -222,6 +222,13 @@ class NetworkApiTests(AppCase):
         body = {"kind": "smb", "address": "nas.local", "share": "Backup", "user": "me", "password": "pw", **kw}
         return self.call("POST", "network/connect", body)
 
+    def test_a_failed_mount_is_explained(self):
+        self.sys.mount_network = lambda *a, **k: (False, "mount error(13): Permission denied")
+        with self.assertRaises(server.ApiError) as cm:
+            self.connect()
+        self.assertIn("refused", str(cm.exception))
+        self.assertIsNone(self.app.network)
+
     def test_input_is_checked(self):
         for bad in ({"kind": "ftp"}, {"address": "bad host!"}, {"address": "-x"}, {"share": "a/b"},
                     {"kind": "nfs", "share": "relative"}, {"password": "a\nusername=root"}, {"user": "x" * 200}):
@@ -253,6 +260,19 @@ class NetworkApiTests(AppCase):
                 self.call("POST", "plan", {"source": self.src, "dest": "network"})
         finally:
             os.environ.pop("FAKE_DELAY", None)
+
+
+class NetworkErrorTests(unittest.TestCase):
+    def test_common_failures_are_put_in_plain_words(self):
+        e = server.explain_network_error
+        self.assertIn("software", e("mount: /x: unknown filesystem type 'cifs'."))
+        self.assertIn("refused", e("mount error(13): Permission denied"))
+        self.assertIn("could not be reached", e("mount error(113): No route to host"))
+        self.assertIn("could not be reached", e("Failed to resolve: Name or service not known"))
+        self.assertIn("shared folder", e("mount error(2): No such file or directory"))
+        other = e("something odd")
+        self.assertTrue(other.startswith("Could not connect.") and "something odd" in other)
+        self.assertTrue(e("").startswith("Could not connect."))
 
 
 class PreviewTests(unittest.TestCase):

@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Drive Rescue</title>
+<script>(function(){var t;try{t=localStorage.getItem('dr-theme')}catch(e){}if(t!=='light'&&t!=='dark')t=(window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';document.documentElement.dataset.theme=t})();</script>
 <style>
 :root{
   --bg:#F5F7FA;--surface:#FFFFFF;--line:#DDE3EA;--line2:#C5CED8;--ink:#16202C;--muted:#5B6877;
@@ -11,6 +12,17 @@
   --warn-bg:#FFF4E0;--warn-line:#F0D49B;--warn-ink:#6B4300;--amber:#E0A030;
   --bad-bg:#FDECEA;--bad-line:#F4B8B1;--bad-ink:#9B1C14;--ok-bg:#E6F4EA;--ok-ink:#17623A;
   --neutral-bg:#EEF1F5;--neutral-ink:#4A5663;
+  --surface:#FFFFFF;--off-bg:#F8F9FB;--off-line:#E6EAF0;--dis-bg:#C9D3DC;--dis-ink:#3F4B58;--dis-quiet:#8A96A3;
+  --dot:#9AA7B5;--focus:var(--focus);--on-accent:#FFFFFF;color-scheme:light;
+}
+:root[data-theme="dark"]{
+  --bg:#0F161D;--surface:#17212B;--line:#2A3744;--line2:#3A4958;--ink:#E6EDF3;--muted:#9AA9B8;
+  --accent:#3DB9B2;--accent-bg:#12302F;--accent-line:#1F5A57;--accent-ink:#9CE6E0;
+  --warn-bg:#3A2D12;--warn-line:#6B5320;--warn-ink:#F2D08A;--amber:#E0A030;
+  --bad-bg:#3A1A18;--bad-line:#7A332D;--bad-ink:#FFB4AA;--ok-bg:#12301F;--ok-ink:#8FE0B0;
+  --neutral-bg:#212C37;--neutral-ink:#B5C2CF;
+  --off-bg:#121A22;--off-line:#222E39;--dis-bg:#2A3744;--dis-ink:#8FA0B1;--dis-quiet:#5E6D7C;
+  --dot:#6C7C8C;--focus:#5BC9C2;--on-accent:#06201F;color-scheme:dark;
 }
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:1rem/1.4 system-ui,"Segoe UI",Ubuntu,"DejaVu Sans",sans-serif}
@@ -19,7 +31,7 @@ button,input,select{font:inherit;color:inherit}
 .app{max-width:1040px;margin:0 auto;width:100%;flex:1;display:flex;flex-direction:column}
 header{display:flex;align-items:center;justify-content:space-between;padding:22px 40px 0}
 .brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:1.0625rem}
-.logo{width:32px;height:32px;border-radius:9px;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center}
+.logo{width:32px;height:32px;border-radius:9px;background:var(--accent);color:var(--on-accent);display:flex;align-items:center;justify-content:center}
 #stepLabel{font-size:0.8125rem;color:var(--muted)}
 nav{display:flex;gap:10px;padding:16px 40px 0}
 nav div{flex:1;display:flex;flex-direction:column;gap:8px;font-size:0.875rem;color:var(--muted);font-weight:500}
@@ -30,34 +42,34 @@ main{flex:1;padding:20px 40px 24px;display:flex;flex-direction:column;gap:16px}
 h1{margin:0;font-size:1.75rem;line-height:1.2;font-weight:700}
 .sub{margin:6px 0 0;color:var(--muted);font-size:1.0625rem}
 .muted{color:var(--muted)}
-.footbar{position:sticky;bottom:0;background:#fff;border-top:1px solid var(--line);z-index:5}
+.footbar{position:sticky;bottom:0;background:var(--surface);border-top:1px solid var(--line);z-index:5}
 footer{max-width:1040px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:12px 16px;padding:14px 40px;flex-wrap:wrap}
 .note svg{flex:none}
 .tools{display:flex;align-items:center;gap:6px}
-.tbtn{width:36px;height:36px;border-radius:10px;border:1px solid var(--line);background:#fff;color:var(--muted);font-weight:700;cursor:pointer}
+.tbtn{width:44px;height:44px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--muted);font-weight:700;cursor:pointer}
 .tbtn.pw{width:auto;padding:0 12px;font-size:.875rem;font-weight:600}
 .tbtn[hidden]{display:none}
 .tbtn:hover{border-color:var(--accent);color:var(--accent)}
-.tbtn:focus-visible{outline:3px solid #7CC4C0;outline-offset:2px}
+.tbtn:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
 html{font-size:calc(16px * var(--zoom,1))}
 footer .grp{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
 .note{display:flex;align-items:center;gap:8px;font-size:0.875rem;color:var(--muted)}
-.btn{min-height:48px;padding:0 24px;border-radius:12px;border:1px solid var(--line2);background:#fff;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px}
-.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;padding:0 28px}
+.btn{min-height:48px;padding:0 24px;border-radius:12px;border:1px solid var(--line2);background:var(--surface);font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent);padding:0 28px}
 .btn.quiet{border-color:transparent;background:transparent;color:var(--muted)}
-.btn[disabled]{background:#C9D3DC;border-color:#C9D3DC;color:#3F4B58;cursor:not-allowed}
-.btn.quiet[disabled]{background:transparent;border-color:transparent;color:#8A96A3}
-.btn:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible,.link:focus-visible{outline:3px solid #7CC4C0;outline-offset:2px}
+.btn[disabled]{background:var(--dis-bg);border-color:var(--dis-bg);color:var(--dis-ink);cursor:not-allowed}
+.btn.quiet[disabled]{background:transparent;border-color:transparent;color:var(--dis-quiet)}
+.btn:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible,.link:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
 .cols{display:flex;gap:14px;align-items:flex-start}
 .cols>.col{flex:1;min-width:0;display:flex;flex-direction:column;gap:8px}
 .eyebrow{display:flex;align-items:baseline;gap:8px}
 .eyebrow b{font-size:0.75rem;letter-spacing:.08em;color:var(--accent)}
 .eyebrow span{font-size:1.0625rem;font-weight:700}
-.arrow{margin-top:50px;flex:none;width:40px;height:40px;border-radius:50%;background:#fff;border:1px solid var(--line);color:var(--accent);display:flex;align-items:center;justify-content:center}
-.drive{display:flex;align-items:center;gap:12px;min-height:58px;padding:8px 14px;border-radius:12px;border:1.5px solid var(--line);background:#fff;cursor:pointer}
+.arrow{margin-top:50px;flex:none;width:40px;height:40px;border-radius:50%;background:var(--surface);border:1px solid var(--line);color:var(--accent);display:flex;align-items:center;justify-content:center}
+.drive{display:flex;align-items:center;gap:12px;min-height:64px;padding:8px 14px;border-radius:12px;border:1.5px solid var(--line);background:var(--surface);cursor:pointer}
 .drive.on{border-color:var(--accent);background:var(--accent-bg)}
-.drive.off{background:#F8F9FB;border-color:#E6EAF0;cursor:not-allowed}
-.drive input{width:18px;height:18px;margin:0;accent-color:var(--accent)}
+.drive.off{background:var(--off-bg);border-color:var(--off-line);cursor:not-allowed}
+.drive input{width:22px;height:22px;margin:0;accent-color:var(--accent)}
 .ico{display:flex;color:var(--muted)}
 .drive.on .ico{color:var(--accent)}
 .txt{flex:1;min-width:0;display:flex;flex-direction:column}
@@ -73,17 +85,17 @@ footer .grp{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
 .banner svg{flex:none;margin-top:1px}
 .banner.warn{background:var(--warn-bg);border-color:var(--warn-line);color:var(--warn-ink)}
 .banner.bad{background:var(--bad-bg);border-color:var(--bad-line);color:var(--bad-ink)}
-.banner.plain{background:#fff;border-color:var(--line);color:var(--muted)}
+.banner.plain{background:var(--surface);border-color:var(--line);color:var(--muted)}
 .banner ul{margin:0;padding-left:18px}
-details.adv{background:#fff;border:1px solid var(--line);border-radius:12px}
+details.adv{background:var(--surface);border:1px solid var(--line);border-radius:12px}
 details.adv summary{display:flex;align-items:center;gap:8px;min-height:48px;padding:0 18px;font-weight:600;cursor:pointer;list-style:none}
 details.adv summary::-webkit-details-marker{display:none}
 details.adv summary small{font-weight:400;color:var(--muted)}
 details.adv[open] summary svg{transform:rotate(90deg)}
 .fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;padding:4px 18px 18px}
 .fields label{display:flex;flex-direction:column;gap:6px;font-size:0.8125rem;font-weight:600}
-.fields input,.fields select{height:44px;border-radius:10px;border:1px solid var(--line2);padding:0 12px;background:#fff;font-weight:400}
-.card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:18px 20px}
+.fields input,.fields select{height:48px;border-radius:10px;border:1px solid var(--line2);padding:0 12px;background:var(--surface);font-weight:400}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:18px 20px}
 .card h2{margin:0 0 8px;font-size:0.9375rem;font-weight:700}
 .stats{display:flex;align-items:center;justify-content:space-between;gap:24px;flex-wrap:wrap}
 .big{font-size:3.5rem;line-height:1;font-weight:700;color:var(--accent)}
@@ -104,7 +116,7 @@ details.adv[open] summary svg{transform:rotate(90deg)}
 .split>.card:first-child{flex:1.7;min-width:0}
 .split>.card:last-child{flex:1;min-width:0}
 .phase{display:flex;gap:12px;padding:7px 0}
-.dot{flex:none;width:12px;height:12px;margin-top:4px;border-radius:50%;border:2px solid #9AA7B5;background:#fff}
+.dot{flex:none;width:12px;height:12px;margin-top:4px;border-radius:50%;border:2px solid var(--dot);background:var(--surface)}
 .phase.active .dot,.phase.done .dot{background:var(--accent);border-color:var(--accent)}
 .phase b{font-size:0.875rem}
 .phase small{display:block;font-size:0.875rem;color:var(--muted)}
@@ -114,22 +126,22 @@ details.adv[open] summary svg{transform:rotate(90deg)}
 .num{display:inline-flex;width:28px;height:28px;border-radius:50%;background:var(--accent-bg);color:var(--accent);align-items:center;justify-content:center;font-weight:700;margin-bottom:10px}
 .crumbs{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:0.875rem;color:var(--muted)}
 .link{background:none;border:0;padding:0;color:var(--accent);font-weight:600;cursor:pointer;text-align:left}
-.entry{display:flex;align-items:center;gap:12px;min-height:44px;padding:4px 14px;border-top:1px solid var(--line)}
+.entry{display:flex;align-items:center;gap:12px;min-height:48px;padding:4px 14px;border-top:1px solid var(--line)}
 .entry:first-child{border-top:0}
-.entry input{width:18px;height:18px;accent-color:var(--accent)}
+.entry input{width:22px;height:22px;accent-color:var(--accent)}
 .entry .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .entry small{color:var(--muted)}
-.list{background:#fff;border:1px solid var(--line);border-radius:12px;max-height:340px;overflow:auto}
+.list{background:var(--surface);border:1px solid var(--line);border-radius:12px;max-height:340px;overflow:auto}
 .mono{font-family:ui-monospace,Consolas,"DejaVu Sans Mono",monospace;font-size:0.875rem;word-break:break-all}
 .two{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
-.choice{text-align:left;background:#fff;border:1.5px solid var(--line);border-radius:16px;padding:22px;cursor:pointer;display:flex;flex-direction:column;gap:8px}
+.choice{text-align:left;background:var(--surface);border:1.5px solid var(--line);border-radius:16px;padding:22px;cursor:pointer;display:flex;flex-direction:column;gap:8px}
 .choice:hover{border-color:var(--accent);background:var(--accent-bg)}
-.choice:focus-visible{outline:3px solid #7CC4C0;outline-offset:2px}
+.choice:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
 .choice b{font-size:1.1875rem}.choice p{margin:0;color:var(--muted);font-size:0.9375rem;flex:1}
 .choice .num{width:44px;height:44px;border-radius:12px}
 .choice .go{color:var(--accent);font-weight:600;display:flex;align-items:center;gap:8px;margin-top:6px}
 .confirm{display:flex;flex-direction:column;gap:6px;font-size:0.875rem;font-weight:600;max-width:320px}
-.confirm input{height:48px;border-radius:10px;border:1.5px solid var(--bad-line);padding:0 14px;background:#fff;font-size:1rem;letter-spacing:.08em}
+.confirm input{height:48px;border-radius:10px;border:1.5px solid var(--bad-line);padding:0 14px;background:var(--surface);font-size:1rem;letter-spacing:.08em}
 @media (max-width:760px){
   .two{grid-template-columns:1fr}
   header,nav,main,footer{padding-left:20px;padding-right:20px}
@@ -139,6 +151,25 @@ details.adv[open] summary svg{transform:rotate(90deg)}
   .fields{grid-template-columns:1fr}.big{font-size:2.75rem}
 }
 @media (prefers-reduced-motion:reduce){.bar i{transition:none}}
+
+.fields label,.netform label{display:flex;flex-direction:column;gap:6px;font-size:0.8125rem;font-weight:600}
+.netform{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.netform input,.netform select{height:48px;border-radius:10px;border:1px solid var(--line2);padding:0 12px;background:var(--surface);font-weight:400}
+.opt{display:flex;align-items:flex-start;gap:12px;font-size:0.9375rem;cursor:pointer}
+.opt input{width:22px;height:22px;margin:0;flex:none;accent-color:var(--accent)}
+.opt small{display:block;color:var(--muted);font-weight:400}
+.help{display:inline-block;vertical-align:middle;margin-left:6px;position:relative}
+.help>summary{list-style:none;cursor:pointer;width:22px;height:22px;border-radius:50%;border:1px solid var(--line2);color:var(--muted);font-size:0.75rem;font-weight:700;display:inline-flex;align-items:center;justify-content:center;background:var(--surface)}
+.help>summary::-webkit-details-marker{display:none}
+.help>summary:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+.help[open]>summary{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
+.help[open]>div{position:absolute;z-index:20;left:0;top:28px;width:max-content;max-width:min(340px,78vw);padding:10px 12px;border-radius:10px;background:var(--surface);border:1px solid var(--accent-line);color:var(--ink);font-size:0.875rem;font-weight:400;line-height:1.4;letter-spacing:0;text-transform:none;box-shadow:0 8px 24px rgba(0,0,0,.22)}
+.pv{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap}
+.pv img{max-width:100%;max-height:320px;border-radius:8px;border:1px solid var(--line);background:var(--bg)}
+.pv pre{margin:0;flex:1;min-width:240px;white-space:pre-wrap;word-break:break-word;max-height:260px;overflow:auto;font:inherit;font-size:0.875rem;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+.row2{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.report pre{white-space:pre-wrap;word-break:break-word;max-height:300px;overflow:auto;font-size:0.8125rem;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:8px 0 0}
+@media (max-width:760px){.netform{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -148,6 +179,7 @@ details.adv[open] summary svg{transform:rotate(90deg)}
     <div class="tools"><span id="stepLabel" style="margin-right:10px"></span>
       <button type="button" class="tbtn pw" data-act="reboot" hidden>Restart</button>
       <button type="button" class="tbtn pw" data-act="poweroff" hidden>Shut down</button>
+      <button type="button" class="tbtn" data-act="theme" aria-label="Switch between light and dark" title="Light / dark">&#9680;</button>
       <button type="button" class="tbtn" data-act="textSmaller" aria-label="Smaller text" title="Smaller text">A−</button>
       <button type="button" class="tbtn" data-act="textBigger" aria-label="Larger text" title="Larger text">A+</button></div>
   </header>
@@ -182,10 +214,28 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": 
 
 const S = {
   step: 1, mode: "rescue", confirm: "", drives: [], health: {}, source: "", dest: "", folder: "DriveRescue",
-  opts: { style: "gentle", retries: 3 }, plan: null, status: null, timer: null,
-  rec: { info: null, vol: "", dir: null, sel: new Set(), task: null, error: "", loading: false, timer: null, finished: false },
+  opts: { style: "gentle", retries: 3, pause_after_quick: false }, plan: null, status: null, timer: null,
+  rec: { info: null, vol: "", dir: null, sel: new Set(), task: null, error: "", loading: false, timer: null, finished: false, preview: null },
   loadError: "",
+  net: null, netOpen: false, netBusy: false, netError: "", netForm: { kind: "smb", address: "", share: "", user: "" },
+  power: false, shutdownAfter: false, shutLeft: null, shutTimer: null, shutError: "",
+  sound: true, lastState: null, userPaused: false,
 };
+try { S.sound = localStorage.getItem("dr-sound") !== "0"; } catch (e) { /* fine without it */ }
+
+// Short explanations for the terms a first-time user will not know. Shown from a small "?" button.
+const TIPS = {
+  image: "An image file is an exact copy of the whole failing drive, saved as one big file on the healthy drive. Your files are then recovered from that copy, so the failing drive is read as little as possible.",
+  style: "Gentle reads in small pieces, so a bad spot costs less of the drive. Fast is quicker, and suits a drive that is only slightly damaged.",
+  retries: "After the quick copy, the program goes back over the parts it skipped and tries again, slowly. More passes can win back more data, but take longer and put the drive under more strain.",
+  priority: "A failing drive can get worse the longer it runs. With this on, the copy pauses once everything that reads easily is safe, so you can get your most important files out before the slow, harder part begins.",
+  skipped: "Areas that are hard to read are skipped on the first pass, so the easy data is saved first. The program comes back to them later.",
+  map: "Each square is a slice of the drive. Green is copied, amber was skipped for now, and grey has not been reached yet.",
+  network: "Saves the copy on another computer or a network drive (NAS) instead of a drive plugged into this one. It is slower, and the connection must stay up. If it drops, you can carry on where it stopped.",
+  boot: "Computers start up in one of two ways: UEFI (modern) or BIOS/legacy (older). A drive set up for one way may not start a computer that is set to the other.",
+  outlook: "A rough guide based on how much of the drive could be read during the quick copy. It is an estimate, not a promise.",
+};
+const tip = k => `<details class="help"><summary aria-label="What does this mean?">?</summary><div>${esc(TIPS[k])}</div></details>`;
 
 async function api(path, body) {
   const res = await fetch("/api/" + path, {
@@ -208,7 +258,7 @@ function chrome() {
     return `<div class="${cls}"${i === at ? ' aria-current="step"' : ""}><i></i><span>${n}. ${t}</span></div>`;
   }).join("");
 }
-function stopTimers() { clearInterval(S.timer); clearInterval(S.rec.timer); S.timer = S.rec.timer = null; }
+function stopTimers() { clearInterval(S.timer); clearInterval(S.rec.timer); S.timer = S.rec.timer = null; clearInterval(S.shutTimer); S.shutLeft = null; }
 function go(step) {
   stopTimers();
   S.step = step;
@@ -226,6 +276,59 @@ function setZoom(i) {
   try { localStorage.setItem("dr-zoom", String(i)); } catch (e) { /* fine without it */ }
 }
 try { S.zoom = parseInt(localStorage.getItem("dr-zoom") || "0", 10) || 0; } catch (e) { S.zoom = 0; }
+function applyTheme() {
+  let t = S.theme;
+  if (t !== "light" && t !== "dark") t = window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  document.documentElement.dataset.theme = t;
+}
+try { S.theme = localStorage.getItem("dr-theme"); } catch (e) { S.theme = null; }
+function toggleTheme() {
+  S.theme = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+  try { localStorage.setItem("dr-theme", S.theme); } catch (e) { /* fine without it */ }
+  applyTheme();
+}
+function chime() {
+  if (!S.sound) return;
+  try {
+    const C = window.AudioContext || window.webkitAudioContext, ctx = new C();
+    [660, 880, 1100].forEach((f, i) => {
+      const t = ctx.currentTime + i * 0.22, o = ctx.createOscillator(), g = ctx.createGain();
+      o.frequency.value = f; g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.25, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
+      o.connect(g); g.connect(ctx.destination); o.start(t); o.stop(t + 0.22);
+    });
+  } catch (e) { /* no sound available */ }
+}
+function alertUser(title) { chime(); document.title = title + " · Drive Rescue"; }
+function startShutdown() {
+  S.shutLeft = 30; S.shutError = ""; paintShut(); clearInterval(S.shutTimer);
+  S.shutTimer = setInterval(async () => {
+    S.shutLeft -= 1;
+    if (S.shutLeft <= 0) {
+      clearInterval(S.shutTimer); S.shutLeft = null;
+      try {
+        await api("system/power", { action: "poweroff" });
+        document.body.innerHTML = '<p style="font:1.25rem system-ui;padding:3rem;text-align:center">Shutting down… you can unplug the drives when the screen goes dark.</p>';
+        return;
+      } catch (e) { S.shutError = e.message; }
+    }
+    paintShut();
+  }, 1000);
+}
+function cancelShutdown() { clearInterval(S.shutTimer); S.shutLeft = null; S.shutdownAfter = false; const c = $("#optShut"); if (c) c.checked = false; paintShut(); }
+function paintShut() {
+  const el = $("#cShut");
+  if (!el) return;
+  el.innerHTML = S.shutLeft ? banner("warn", `Shutting down in <b>${S.shutLeft}</b> seconds. ${btn("cancelShutdown", "Cancel")}`)
+    : S.shutError ? banner("bad", esc(S.shutError)) : "";
+}
+function notifyOnChange(s) {
+  const prev = S.lastState; S.lastState = s.state;
+  if (!prev || prev === s.state || !["running", "pausing", "finishing"].includes(prev)) return;
+  if (s.state === "done") { alertUser("✔ Finished"); if (S.shutdownAfter && S.power) startShutdown(); }
+  else if (s.state === "error") alertUser("⚠ Needs attention");
+  else if (s.state === "paused" && s.quick_done && !S.userPaused && S.opts.pause_after_quick) alertUser("✔ Quick copy finished");
+}
 function footer(left, right) { $("#footer").innerHTML = `<div class="grp">${left}</div><div class="grp">${right}</div>`; }
 
 // ----------------------------------------------------------------- step 1
@@ -267,17 +370,21 @@ function viewDrives() {
       </div>
       <div class="arrow">${I.arrow}</div>
       <div class="col" role="radiogroup" aria-label="Healthy drive">
-        <div class="eyebrow"><b>TO</b><span>The healthy drive</span></div><div id="dstList"></div>
+        <div class="eyebrow"><b>TO</b><span>The healthy drive or a network folder</span></div><div id="dstList"></div><div id="netBox"></div>
       </div>
     </div>
     <div id="notice"></div>
+    <label class="card opt"><input type="checkbox" id="optPriority" ${S.opts.pause_after_quick ? "checked" : ""}>
+      <span><b>Let me save my important files first</b> (recommended for a failing drive) ${tip("priority")}
+      <small>The copy pauses once everything that reads easily is safe, so you can pick out your most important files before the slow part begins.</small></span></label>
     <details class="adv"><summary>${I.chev}<span>Advanced options</span><small id="advHint"></small></summary>
       <div class="fields">
-        <label>Copy style<select id="optStyle"><option value="gentle">Gentle (recommended)</option><option value="fast">Fast</option></select></label>
-        <label>Retry passes<input id="optRetries" type="number" min="0" max="10"></label>
+        <label><span>Copy style ${tip("style")}</span><select id="optStyle"><option value="gentle">Gentle (recommended)</option><option value="fast">Fast</option></select></label>
+        <label><span>Retry passes ${tip("retries")}</span><input id="optRetries" type="number" min="0" max="10"></label>
         <label>Folder on the healthy drive<input id="optFolder" type="text" maxlength="60"></label>
       </div>
     </details>`;
+  netBoxPaint();
   $("#optStyle").value = S.opts.style;
   $("#optRetries").value = S.opts.retries;
   $("#optFolder").value = S.folder;
@@ -287,7 +394,7 @@ function viewDrives() {
 }
 function advHint() {
   const el = $("#advHint");
-  if (el) el.textContent = `${S.opts.style === "fast" ? "Fast" : "Gentle"} copy · ${S.opts.retries} retry passes · folder ${S.folder || "DriveRescue"}`;
+  if (el) el.textContent = `${S.opts.style === "fast" ? "Fast" : "Gentle"} copy · ${S.opts.retries} retry passes · folder ${S.folder || "DriveRescue"}${S.opts.pause_after_quick ? " · pause after quick copy" : ""}`;
 }
 function row(kind, value, checked, disabled, title, meta, tag) {
   return `<label class="drive ${checked ? "on" : ""} ${disabled ? "off" : ""}">
@@ -316,7 +423,26 @@ function lists() {
       dst += row("dest", p.path, S.dest === p.path, !usable, p.label || p.name, meta, same ? ["Failing drive", "neutral"] : usable ? ["Ready", "ok"] : ["Can't use", "neutral"]);
     }
   }
+  if (S.net) dst += row("dest", "network", S.dest === "network", false, "Network folder", `${S.net.label}${S.net.free_text ? " · " + S.net.free_text + " free" : ""}`, ["Connected", "ok"]);
   $("#dstList").innerHTML = dst || `<p class="muted">${S.drives.length ? "No other drive found. Plug in the healthy drive, then press Rescan." : ""}</p>`;
+}
+function netBoxPaint() {
+  const el = $("#netBox");
+  if (!el || S.mode === "clone") return;
+  if (S.net) { el.innerHTML = `<div class="row2"><span class="muted">Saving over the network to ${esc(S.net.label)}</span>${btn("netDisconnect", "Disconnect", "quiet")}</div>`; return; }
+  if (!S.netOpen) { el.innerHTML = btn("netOpen", "Save to a network folder instead…", "quiet"); return; }
+  const f = S.netForm, nfs = f.kind === "nfs";
+  el.innerHTML = `<div class="card" style="display:flex;flex-direction:column;gap:12px">
+    <h2 style="margin:0">Save to a network folder ${tip("network")}</h2>
+    <div class="netform">
+      <label>Type<select id="netKind"><option value="smb" ${nfs ? "" : "selected"}>Windows share (SMB)</option><option value="nfs" ${nfs ? "selected" : ""}>NFS share</option></select></label>
+      <label>Computer name or address<input id="netAddr" type="text" value="${esc(f.address)}" placeholder="nas.local or 192.168.1.20" autocomplete="off" spellcheck="false"></label>
+      <label>${nfs ? "Shared path" : "Shared folder"}<input id="netShare" type="text" value="${esc(f.share)}" placeholder="${nfs ? "/volume1/backup" : "Backup"}" autocomplete="off" spellcheck="false"></label>
+      ${nfs ? "" : `<label>User name (optional)<input id="netUser" type="text" value="${esc(f.user)}" autocomplete="off"></label>
+      <label>Password<input id="netPass" type="password" autocomplete="off"></label>`}
+    </div>
+    ${S.netError ? banner("bad", esc(S.netError)) : ""}
+    <div style="display:flex;gap:8px;flex-wrap:wrap">${btn("netConnect", S.netBusy ? "Connecting…" : "Connect", "primary", S.netBusy ? "disabled" : "")}${btn("netClose", "Cancel", "quiet")}</div></div>`;
 }
 function healthCard(path, title) {
   const h = S.health[path];
@@ -338,7 +464,7 @@ function notice() {
   const p = S.plan;
   let html = "";
   if (!S.source || !S.dest) {
-    html = banner("", "The copy is saved as one image file (.img) in a folder on the healthy drive. Nothing already on that drive is erased or formatted.");
+    html = banner("", `The copy is saved as one image file (.img) in a folder on the healthy drive. Nothing already on that drive is erased or formatted. ${tip("image")}`);
   } else if (!p) {
     html = banner("plain", "Checking your choices…");
   } else {
@@ -378,7 +504,7 @@ async function loadDrives() {
     const r = await api("drives");
     S.drives = r.drives;
     if (S.source && !S.drives.some(d => d.path === S.source)) S.source = "";
-    if (S.dest && !S.drives.some(d => S.mode === "clone" ? d.path === S.dest : d.partitions.some(p => p.path === S.dest))) S.dest = "";
+    if (S.dest && S.dest !== "network" && !S.drives.some(d => S.mode === "clone" ? d.path === S.dest : d.partitions.some(p => p.path === S.dest))) S.dest = "";
   } catch (e) { S.drives = []; S.loadError = e.message; }
   if (S.step === 2) { lists(); schedulePlan(); }
   for (const d of S.drives) {
@@ -419,9 +545,9 @@ function cloneLists() {
   for (const d of S.drives) {
     if (d.is_boot) { dst += row("dest", d.path, false, true, "Rescue USB stick", meta(d), ["Not available", "neutral"]); continue; }
     const same = d.path === S.source, small = src && d.size < src.size;
-    const tag = same ? ["Drive to copy", "neutral"] : small ? ["Too small", "neutral"] : src && d.size === src.size ? ["Same size", "warn"] : src ? ["Bigger", "ok"] : ["", "neutral"];
+    const tag = same ? ["Drive to copy", "neutral"] : small ? ["Smaller", "warn"] : src && d.size === src.size ? ["Same size", "warn"] : src ? ["Bigger", "ok"] : ["", "neutral"];
     const info = d.partitions.length ? `${meta(d)} · erased: ${d.partitions.length} partition${d.partitions.length > 1 ? "s" : ""}` : meta(d);
-    dst += row("dest", d.path, S.dest === d.path, same || small, d.name, info, tag);
+    dst += row("dest", d.path, S.dest === d.path, same, d.name, info, tag);
   }
   $("#dstList").innerHTML = dst || `<p class="muted">${S.drives.length ? "No other drive found. Plug in the bigger drive, then press Rescan." : ""}</p>`;
 }
@@ -436,10 +562,12 @@ function cloneNotice() {
     html = banner("plain", "Checking your choices…");
   } else {
     if (p.errors.length) html += banner("bad", p.errors.length === 1 ? esc(p.errors[0]) : "<ul>" + p.errors.map(e => `<li>${esc(e)}</li>`).join("") + "</ul>");
+    if (p.shrink && p.shrink.known && p.shrink.fits) html += banner("plain", `Good news: the files on the original use only about ${esc(p.shrink.used_text)}, so a smaller drive can hold them once the main partition is shrunk.`);
     for (const w of p.warnings) html += banner("warn", esc(w));
     if (p.ok) {
       if (p.health && p.health.status === "healthy") html += banner("", "The drive to copy reports that it is healthy.");
       if (p.layout && p.layout.text) html += banner(p.layout.extends ? "" : "plain", esc(p.layout.text));
+      if (p.layout && p.layout.boot) { const b = p.layout.boot; html += banner(b.level === "warn" ? "warn" : b.level === "ok" ? "" : "plain", `<b>Will it start up a computer?</b> ${esc(b.text)} ${tip("boot")}`); }
       const what = p.dest_contents.length ? p.dest_contents.map(c => `${esc(c.name)} (${esc(c.size_text)})`).join(", ") : "nothing recognisable";
       html += banner("bad", `<b>Everything on ${esc(p.dest_drive.name)} (${esc(p.dest_drive.size_text)}) will be erased:</b> ${what}.`);
     }
@@ -475,16 +603,22 @@ function viewCopy() {
     <div class="card">
       <div class="stats">
         <div class="big"><span id="cPct">0%</span><small id="cPctLbl">${S.mode === "clone" ? "of the drive cloned" : "of the drive copied"}</small><div class="muted" id="cAmount" style="font-size:0.9375rem;margin-top:6px"></div></div>
-        <div class="kv"><div><span>Time left</span><b id="cEta">-</b></div><div><span>Speed</span><b id="cSpeed">-</b></div><div><span>${S.mode === "clone" ? "Not readable" : "Skipped for now"}</span><b id="cSkip">0 B</b></div></div>
+        <div class="kv"><div><span>Time so far</span><b id="cElapsed">-</b></div><div><span>Time left (about)</span><b id="cEta">-</b></div><div><span>Speed</span><b id="cSpeed">-</b></div><div><span>${S.mode === "clone" ? "Not readable" : `Skipped for now ${tip("skipped")}`}</span><b id="cSkip">0 B</b></div></div>
       </div>
       <div class="bar" role="progressbar" aria-label="Copy progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="cBarWrap"><i id="cBar"></i></div>
     </div>
+    <div id="cOutlook"></div>
     <div class="split">
-      <div class="card"><div class="stats"><h2 style="margin:0">Drive map</h2>
+      <div class="card"><div class="stats"><h2 style="margin:0">Drive map ${tip("map")}</h2>
         <div class="legend"><span><i style="background:var(--accent)"></i>Copied</span><span><i style="background:var(--amber)"></i>Skipped for now</span><span><i style="background:var(--line)"></i>Not yet copied</span></div></div>
         <div class="map" id="cMap"></div></div>
       <div class="card"><h2>What's happening</h2><div id="cPhases"></div></div>
+    </div>
+    <div class="card" style="display:flex;gap:12px 32px;flex-wrap:wrap">
+      <label class="opt"><input type="checkbox" id="optSound" ${S.sound ? "checked" : ""}><span>Play a sound when it finishes</span></label>
+      ${S.power ? `<label class="opt"><input type="checkbox" id="optShut" ${S.shutdownAfter ? "checked" : ""}><span>Shut down the computer when it finishes<small>You get 30 seconds to cancel. Handy for leaving it overnight.</small></span></label>` : ""}
     </div>`;
+  $("#cNotice").insertAdjacentHTML("afterend", '<div id="cShut"></div>');
   const map = $("#cMap");
   map.innerHTML = Array.from({ length: 294 }, () => '<div class="cell"></div>').join("");
   copyFooter(S.status || { state: "none" });
@@ -495,7 +629,14 @@ function viewCopy() {
 async function pollCopy() {
   try { S.status = await api("status"); } catch (e) { S.status = { state: "error", message: e.message, cells: [], phases: [] }; }
   if (S.step !== 3) return;
+  notifyOnChange(S.status);
   paintCopy(S.status); copyFooter(S.status);
+}
+function outlookCard(o) {
+  const tag = { excellent: "ok", good: "ok", fair: "warn", poor: "bad" }[o.level] || "neutral";
+  return `<div class="card"><div class="row2"><h2 style="margin:0">How it's looking ${tip("outlook")}</h2><span class="tag ${tag}">${esc(o.title)}</span></div>
+    <p style="margin:8px 0 0">${esc(o.text)}</p>
+    ${o.bad_areas ? `<p class="muted" style="margin:6px 0 0">${o.bad_areas} unreadable ${o.bad_areas === 1 ? "area" : "areas"} so far, the largest about ${kb(o.largest_bad)}.</p>` : ""}</div>`;
 }
 function paintCopy(s) {
   if (s.state === "none") {
@@ -511,6 +652,7 @@ function paintCopy(s) {
                   : "Keep the computer on. You can pause at any time and pick up where you left off.";
   if (s.state === "done") sub = s.complete ? "Everything on the drive was copied." : `${s.percent}% of the drive was copied. ${s.skipped_text} could not be read.`;
   else if (s.message) sub = s.message;
+  if (s.state === "paused" && s.quick_done && S.opts.pause_after_quick && !S.userPaused && !clone) sub = "The quick copy is finished.";
   $("#cSub").textContent = sub;
   let note = "";
   if (s.state === "error") note = banner("bad", esc(s.message));
@@ -519,11 +661,16 @@ function paintCopy(s) {
       (s.result.lines || []).map(l => banner("", esc(l))).join("") +
       (s.result.warnings || []).map(w => banner("warn", esc(w))).join("");
   } else if (s.state === "done") note = banner("", "Next, get your files back from the copy.");
+  if (s.state === "paused" && s.quick_done && S.opts.pause_after_quick && !clone)
+    note += banner("", "<b>Everything that reads easily is now safe.</b> Press <b>Get my important files</b> to pick what you need first. When you are ready, come back and press Resume to go after the harder parts.");
+  if (s.speed_note) note += banner("warn", esc(s.speed_note));
   $("#cNotice").innerHTML = note ? `<div style="display:flex;flex-direction:column;gap:8px">${note}</div>` : "";
   $("#cPct").textContent = `${s.percent}%`;
   $("#cAmount").textContent = s.size_text ? `${s.finished_text} of ${s.size_text}` : "";
   $("#cPctLbl").textContent = s.state === "done" ? (clone ? "cloned" : "copied") : (clone ? "of the drive cloned" : "of the drive copied");
   $("#cEta").textContent = s.state === "running" ? s.eta_text : "-";
+  $("#cElapsed").textContent = s.elapsed_text || "-";
+  $("#cOutlook").innerHTML = s.outlook ? outlookCard(s.outlook) : "";
   $("#cSpeed").textContent = s.speed_text;
   $("#cSkip").textContent = s.skipped_text;
   $("#cBar").style.width = `${Math.min(100, s.percent)}%`;
@@ -546,7 +693,7 @@ function copyFooter(s) {
   if (live || s.state === "paused") right += btn("stop", "Stop", "quiet", s.state === "pausing" ? "disabled" : "");
   if (s.state === "none") right += btn("back", "Back");
   if (clone) { if (s.state !== "finishing") right += btn("toDone", `${s.state === "done" ? "Continue" : "Continue"} ${I.arrow}`, "primary", canGo ? "" : "disabled"); }
-  else right += btn("toRecover", `${s.state === "done" ? "Continue to recovery" : "Open what's copied so far"} ${I.arrow}`, "primary", canGo ? "" : "disabled");
+  else right += btn("toRecover", `${s.state === "done" ? "Continue to recovery" : (s.state === "paused" && s.quick_done && S.opts.pause_after_quick ? "Get my important files" : "Open what's copied so far")} ${I.arrow}`, "primary", canGo ? "" : "disabled");
   if ($("#footer").dataset.sig !== left + right) { footer(left, right); $("#footer").dataset.sig = left + right; }
 }
 
@@ -581,12 +728,13 @@ function recoverPaint() {
       .concat(parts.map((p, i) => `<button class="link" data-act="crumb" data-rel="${esc(parts.slice(0, i + 1).join("/"))}">${esc(p)}</button>`)).join(" › ");
     const vols = r.info.volumes.length > 1 ? `<label class="muted">Drive section: <select id="volSel">${r.info.volumes.map(v => `<option value="${esc(v.id)}" ${v.id === r.vol ? "selected" : ""}>${esc(v.name)} (${esc(v.fstype)}, ${esc(v.size_text)})</option>`).join("")}</select></label>` : "";
     const all = r.dir.entries.length && r.dir.entries.every(e => r.sel.has(r.vol + ":" + e.rel));
-    body = `${vols}<div class="crumbs">${crumbs}</div>
+    body = `${vols}${previewCard(r.preview)}<div class="crumbs">${crumbs}</div>
       <div class="list" role="group" aria-label="Files in this folder">
         ${r.dir.entries.length ? `<div class="entry"><input type="checkbox" id="selAll" aria-label="Select everything in this folder" ${all ? "checked" : ""}><span class="nm muted">Select everything in this folder</span></div>` : ""}
         ${r.dir.entries.map(e => `<div class="entry"><input type="checkbox" data-rel="${esc(e.rel)}" aria-label="Select ${esc(e.name)}" ${r.sel.has(r.vol + ":" + e.rel) ? "checked" : ""}>
           <span class="ico">${e.is_dir ? I.folder : I.file}</span>
           <span class="nm">${e.is_dir ? `<button class="link" data-act="open" data-rel="${esc(e.rel)}">${esc(e.name)}</button>` : esc(e.name)}</span>
+          ${e.is_dir ? "" : `<button class="link" data-act="preview" data-rel="${esc(e.rel)}" aria-label="Preview ${esc(e.name)}">Preview</button>`}
           <small>${e.is_dir ? "" : esc(e.size_text)}</small></div>`).join("") || `<div class="entry muted">This folder is empty.</div>`}
       </div>${r.dir.truncated ? banner("plain", "Only the first part of this long folder is shown.") : ""}${r.error ? banner("bad", esc(r.error)) : ""}`;
   }
@@ -597,6 +745,17 @@ function recoverPaint() {
     `${readable ? btn("carve", "Scan for files instead", "", running ? "disabled" : "") : btn("carve", "Scan for files", "primary", r.loading || running ? "disabled" : "")}
      ${readable ? btn("recoverSel", `Recover ${n ? n + " selected" : "selected"} ${I.arrow}`, "primary", n && !running ? "" : "disabled") : ""}
      ${running ? btn("cancelRec", "Cancel", "quiet") : ""}`);
+}
+function previewCard(p) {
+  if (!p) return "";
+  const head = `<div class="row2"><h2 style="margin:0">Preview: ${esc(p.name)}</h2><span><button class="link" data-act="pickPreview" data-rel="${esc(p.rel)}">Tick this file</button> &nbsp; <button class="link" data-act="closePreview">Close</button></span></div>`;
+  let inner;
+  if (p.loading) inner = `<p class="muted" style="margin:8px 0 0">Looking…</p>`;
+  else if (p.error) inner = banner("bad", esc(p.error));
+  else if (p.kind === "image") inner = `<div class="pv" style="margin-top:10px"><img alt="Preview of ${esc(p.name)}" src="data:${esc(p.mime)};base64,${p.data}"><span class="muted">${esc(p.size_text)}</span></div>`;
+  else if (p.kind === "text") inner = `<div class="pv" style="margin-top:10px"><pre>${esc(p.text)}${p.truncated ? "\n…" : ""}</pre></div>`;
+  else inner = `<p class="muted" style="margin:8px 0 0">${esc(p.message || "No preview is available.")}${p.size_text ? " (" + esc(p.size_text) + ")" : ""}</p>`;
+  return `<div class="card">${head}${inner}</div>`;
 }
 function taskCard(t) {
   const what = t.kind === "carve" ? "Scanning for files" : "Copying your files";
@@ -617,6 +776,16 @@ function watchTask() {
 }
 
 // ----------------------------------------------------------------- step 5
+const reportCard = `<div class="card report"><div class="row2"><div><h2 style="margin:0">Report</h2><span class="muted">A plain summary of what happened, to keep or to show a technician or an insurer.</span></div>${btn("report", "Save report")}</div><div id="reportBox"></div></div>`;
+async function saveReport() {
+  const box = $("#reportBox");
+  const r = await api("report");
+  const url = URL.createObjectURL(new Blob([r.text], { type: "text/plain" }));
+  const a = document.createElement("a"); a.href = url; a.download = r.filename; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+  box.innerHTML = `<p style="margin:10px 0 0">Report saved as <b>${esc(r.filename)}</b> in your downloads.${r.saved_to ? ` A copy was also saved next to your image file: <span class="mono">${esc(r.saved_to)}</span>` : ""}</p>
+    <details style="margin-top:8px"><summary class="link">Show the report</summary><pre>${esc(r.text)}</pre></details>`;
+}
 function viewDone() {
   if (S.mode === "clone") return viewCloneDone();
   const t = S.rec.task || {};
@@ -628,7 +797,8 @@ function viewDone() {
     <div class="card"><h2>Where to find them</h2><div class="mono">${esc(folder)}</div>
       <p class="muted" style="margin:8px 0 0">On the healthy drive, inside the folder "${esc((S.status && S.status.folder) || "DriveRescue")}".</p></div>
     <div class="card"><h2>Summary</h2><b>${t.copied || 0}</b> ${(t.copied === 1 ? "file " : "files ") + (t.kind === "carve" ? "found" : "recovered")}${t.bytes ? ` (${esc(t.bytes_text)})` : ""}
-      ${t.failed_count ? `<p class="muted" style="margin:8px 0 0">${t.failed_count} could not be read: ${esc((t.failed || []).slice(0, 5).map(f => f.path.split("/").pop()).join(", "))}${t.failed_count > 5 ? ", and more" : ""}.</p>` : ""}</div>`;
+      ${t.failed_count ? `<p class="muted" style="margin:8px 0 0">${t.failed_count} could not be read: ${esc((t.failed || []).slice(0, 5).map(f => f.path.split("/").pop()).join(", "))}${t.failed_count > 5 ? ", and more" : ""}.</p>` : ""}</div>
+    ${reportCard}`;
   footer(S.rec.finished ? "" : btn("backRecover", "Recover more"), S.rec.finished ? "" : btn("finish", "Finish", "primary"));
 }
 
@@ -647,12 +817,15 @@ function viewCloneDone() {
       ${(r.warnings || []).map(w => banner("warn", esc(w))).join("")}
     </div>
     <div class="card"><h2>Before you start up from the new drive</h2>
-      <p class="muted" style="margin:0">Unplug the original drive, or at least don't start Windows with both drives connected. They are exact twins, and Windows can get confused by that. Keep the original somewhere safe until you are happy that everything works.</p></div>`;
+      <p class="muted" style="margin:0">Unplug the original drive, or at least don't start Windows with both drives connected. They are exact twins, and Windows can get confused by that. Keep the original somewhere safe until you are happy that everything works.</p>
+      ${r.boot ? `<div style="margin-top:10px">${banner(r.boot.level === "warn" ? "warn" : r.boot.level === "ok" ? "" : "plain", `<b>Will it start up a computer?</b> ${esc(r.boot.text)} ${tip("boot")}`)}</div>` : ""}</div>
+    ${reportCard}`;
   footer(btn("again", "Clone another drive"), `<span class="note">${I.check}It is safe to shut down and unplug the drives</span>`);
 }
 
 // ----------------------------------------------------------------- events
 document.addEventListener("click", async ev => {
+  if (document.title !== "Drive Rescue") document.title = "Drive Rescue";
   const el = ev.target.closest("[data-act]");
   if (!el || el.disabled) return;
   const act = el.dataset.act, rel = el.dataset.rel;
@@ -663,6 +836,22 @@ document.addEventListener("click", async ev => {
         document.body.innerHTML = '<p style="font:1.25rem system-ui;padding:3rem;text-align:center">' + (act === "poweroff" ? "Shutting down… you can unplug the drives when the screen goes dark." : "Restarting…") + "</p>";
       }
     }
+    else if (act === "theme") toggleTheme();
+    else if (act === "report") { el.disabled = true; try { await saveReport(); } finally { el.disabled = false; } }
+    else if (act === "cancelShutdown") cancelShutdown();
+    else if (act === "netOpen") { S.netOpen = true; S.netError = ""; netBoxPaint(); }
+    else if (act === "netClose") { S.netOpen = false; S.netError = ""; netBoxPaint(); }
+    else if (act === "netDisconnect") { await api("network/disconnect", {}); S.net = null; if (S.dest === "network") S.dest = ""; lists(); netBoxPaint(); schedulePlan(); }
+    else if (act === "netConnect") {
+      const f = S.netForm, pass = ($("#netPass") || {}).value || "";
+      S.netBusy = true; S.netError = ""; netBoxPaint();
+      try {
+        const r = await api("network/connect", { kind: f.kind, address: f.address, share: f.share, user: f.user, password: pass });
+        S.net = { label: r.label, free_text: r.free_text }; S.netOpen = false; S.dest = "network";
+        lists(); schedulePlan();
+      } catch (e) { S.netError = e.message; }
+      S.netBusy = false; netBoxPaint();
+    }
     else if (act === "textBigger") setZoom((S.zoom || 0) + 1);
     else if (act === "textSmaller") setZoom((S.zoom || 0) - 1);
     else if (act === "next") go(2);
@@ -670,25 +859,34 @@ document.addEventListener("click", async ev => {
     else if (act === "rescan") { S.drives = []; S.health = {}; lists(); await loadDrives(); }
     else if (act === "start") {
       el.disabled = true;
-      try { await api("start", { source: S.source, dest: S.dest, folder: S.folder, opts: S.opts }); S.status = null; $("#footer").dataset.sig = ""; go(3); }
+      try { await api("start", { source: S.source, dest: S.dest, folder: S.folder, opts: S.opts }); S.status = null; S.lastState = null; S.userPaused = false; $("#footer").dataset.sig = ""; go(3); }
       catch (e) { S.plan = { ok: false, errors: (e.data && e.data.errors && e.data.errors.length) ? e.data.errors : [e.message], warnings: (e.data && e.data.warnings) || [] }; notice(); drivesFooter(); }
     }
-    else if (act === "pause") { S.status = await api("pause", {}); paintCopy(S.status); copyFooter(S.status); }
-    else if (act === "resume") { S.status = await api("resume", {}); paintCopy(S.status); copyFooter(S.status); }
-    else if (act === "stop") { if (confirm(S.mode === "clone" ? "Stop cloning? The bigger drive will be left half finished and won't start up until a clone completes." : "Stop copying? What has been copied so far is kept, and you can continue later.")) { S.status = await api("stop", {}); paintCopy(S.status); copyFooter(S.status); } }
+    else if (act === "pause") { S.userPaused = true; S.status = await api("pause", {}); S.lastState = S.status.state; paintCopy(S.status); copyFooter(S.status); }
+    else if (act === "resume") { S.userPaused = false; S.rec.preview = null; S.status = await api("resume", {}); S.lastState = S.status.state; paintCopy(S.status); copyFooter(S.status); }
+    else if (act === "stop") { if (confirm(S.mode === "clone" ? "Stop cloning? The bigger drive will be left half finished and won't start up until a clone completes." : "Stop copying? What has been copied so far is kept, and you can continue later.")) { S.status = await api("stop", {}); S.lastState = S.status.state; paintCopy(S.status); copyFooter(S.status); } }
     else if (act === "toRecover") go(4);
     else if (act === "toDone") go(5);
     else if (act === "mode") { S.mode = el.dataset.mode; S.source = S.dest = ""; S.plan = null; S.confirm = ""; S.status = null; go(2); }
     else if (act === "again") { S.status = null; S.source = S.dest = ""; S.plan = null; S.confirm = ""; $("#footer").dataset.sig = ""; go(1); }
     else if (act === "startClone") {
       el.disabled = true;
-      try { await api("clone/start", { source: S.source, dest: S.dest, confirm: S.confirm }); S.status = null; $("#footer").dataset.sig = ""; go(3); }
+      try { await api("clone/start", { source: S.source, dest: S.dest, confirm: S.confirm }); S.status = null; S.lastState = null; $("#footer").dataset.sig = ""; go(3); }
       catch (e) { S.plan = { ok: false, errors: (e.data && e.data.errors && e.data.errors.length) ? e.data.errors : [e.message], warnings: (e.data && e.data.warnings) || [] }; notice(); drivesFooter(); }
     }
     else if (act === "backCopy") { $("#footer").dataset.sig = ""; go(3); }
     else if (act === "backRecover") go(4);
-    else if (act === "open") { await loadDir(rel); S.rec.sel = new Set(); recoverPaint(); }
-    else if (act === "crumb") { await loadDir(rel); recoverPaint(); }
+    else if (act === "open") { S.rec.preview = null; await loadDir(rel); S.rec.sel = new Set(); recoverPaint(); }
+    else if (act === "crumb") { S.rec.preview = null; await loadDir(rel); recoverPaint(); }
+    else if (act === "preview") {
+      const name = rel.split("/").pop();
+      S.rec.preview = { name, rel, loading: true }; recoverPaint();
+      try { S.rec.preview = { name, rel, ...(await api(`recover/preview?volume=${encodeURIComponent(S.rec.vol)}&rel=${encodeURIComponent(rel)}`)) }; }
+      catch (e) { S.rec.preview = { name, rel, error: e.message }; }
+      recoverPaint();
+    }
+    else if (act === "closePreview") { S.rec.preview = null; recoverPaint(); }
+    else if (act === "pickPreview") { S.rec.sel.add(S.rec.vol + ":" + rel); S.rec.preview = null; recoverPaint(); }
     else if (act === "recoverSel") {
       const items = [...S.rec.sel].map(k => ({ volume: k.slice(0, k.indexOf(":")), rel: k.slice(k.indexOf(":") + 1) }));
       S.rec.task = await api("recover/copy", { items }); S.rec.error = ""; recoverPaint(); watchTask();
@@ -700,11 +898,21 @@ document.addEventListener("click", async ev => {
     if (S.step === 4) { S.rec.error = e.message; recoverPaint(); } else alert(e.message);
   }
 });
-document.addEventListener("input", ev => { if (ev.target.id === "confirmText") { S.confirm = ev.target.value; cloneFooter(); } });
+document.addEventListener("input", ev => {
+  const id = ev.target.id;
+  if (id === "confirmText") { S.confirm = ev.target.value; cloneFooter(); }
+  else if (id === "netAddr") S.netForm.address = ev.target.value.trim();
+  else if (id === "netShare") S.netForm.share = ev.target.value.trim();
+  else if (id === "netUser") S.netForm.user = ev.target.value.trim();
+});
 document.addEventListener("change", ev => {
   const t = ev.target;
   if (t.name === "source") { S.source = t.value; const d = S.drives.find(x => x.partitions.some(p => p.path === S.dest)); if (d && d.path === S.source) S.dest = ""; lists(); schedulePlan(); }
   else if (t.name === "dest") { S.dest = t.value; lists(); schedulePlan(); }
+  else if (t.id === "optPriority") { S.opts.pause_after_quick = t.checked; advHint(); schedulePlan(); }
+  else if (t.id === "optSound") { S.sound = t.checked; try { localStorage.setItem("dr-sound", t.checked ? "1" : "0"); } catch (e) { /* fine */ } }
+  else if (t.id === "optShut") { S.shutdownAfter = t.checked; if (!t.checked) cancelShutdown(); }
+  else if (t.id === "netKind") { S.netForm.kind = t.value; S.netError = ""; netBoxPaint(); }
   else if (t.id === "optStyle") { S.opts.style = t.value; advHint(); schedulePlan(); }
   else if (t.id === "optRetries") { S.opts.retries = Math.max(0, Math.min(10, parseInt(t.value || "3", 10))); advHint(); schedulePlan(); }
   else if (t.id === "optFolder") { S.folder = t.value.trim() || "DriveRescue"; advHint(); schedulePlan(); }
@@ -715,11 +923,12 @@ document.addEventListener("change", ev => {
 
 // Resume wherever the copy has got to, so reloading the page never loses your place.
 setZoom(S.zoom || 0);
-api("system/info").then(r => { if (r.power) document.querySelectorAll(".pw").forEach(b => b.hidden = false); }).catch(() => {});
+applyTheme();
+api("system/info").then(r => { S.power = !!r.power; if (r.power) document.querySelectorAll(".pw").forEach(b => b.hidden = false); }).catch(() => {});
 (async function boot() {
   try {
     const s = await api("status");
-    if (s.state !== "none") { S.mode = s.mode === "clone" ? "clone" : "rescue"; S.status = s; go(3); return; }
+    if (s.state !== "none") { S.mode = s.mode === "clone" ? "clone" : "rescue"; S.status = s; S.lastState = s.state; go(3); return; }
   } catch (e) { /* fall through to the welcome screen */ }
   go(1);
 })();

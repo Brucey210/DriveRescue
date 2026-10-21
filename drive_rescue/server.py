@@ -50,6 +50,23 @@ def clean_opts(raw):
             "pause_after_quick": raw.get("pause_after_quick") is True}
 
 
+def explain_network_error(err):
+    """A plain sentence for why a shared folder could not be opened. The system's own words are
+    technical, so the common cases are translated and anything else is passed on after a hint."""
+    low = (err or "").lower()
+    if any(w in low for w in ("unknown filesystem type", "wrong fs type", "helper program", "mount.cifs: not found",
+                              "mount.nfs: not found", "no such device")):
+        return "This system doesn't have the software needed for that kind of share, so it can't connect."
+    if any(w in low for w in ("permission denied", "logon_failure", "access denied", "authentication", "(13)")):
+        return "The computer refused the user name or password, or this account isn't allowed to use that folder."
+    if any(w in low for w in ("could not resolve", "name or service not known", "no route to host", "host is down",
+                              "timed out", "unreachable", "(113)", "(112)", "(110)")):
+        return "That computer could not be reached. Check the name or address, that it is switched on, and that it is on the same network."
+    if any(w in low for w in ("no such file", "bad unc", "does not exist", "(2)", "not found")):
+        return "The computer was found, but not a shared folder with that name. Check the spelling."
+    return "Could not connect. Check the name, the shared folder and the password." + (f" ({err.strip()[-160:]})" if err and err.strip() else "")
+
+
 def plan_summary(result):
     return {"ok": result["ok"], "errors": result["errors"], "warnings": result["warnings"],
             "need_text": result.get("need_text", ""), "free_text": result.get("free_text", ""),
@@ -142,7 +159,7 @@ class App:
             mp = os.path.join(plan_mod.MOUNT_ROOT, "network")
             ok, err = self.system.mount_network(kind, address, share, mp, user, password)
             if not ok:
-                raise ApiError("Could not connect. Check the name, the share and the password. " + (err or ""))
+                raise ApiError(explain_network_error(err))
             if not os.access(mp, os.W_OK):
                 self.system.umount(mp)
                 raise ApiError("Connected, but the shared folder is read-only, so a copy can't be saved there.")
@@ -194,7 +211,7 @@ class App:
     # ---- cloning a whole drive
     @staticmethod
     def _clone_summary(result):
-        keep = ("ok", "errors", "warnings", "health", "layout", "dest_contents")
+        keep = ("ok", "errors", "warnings", "health", "layout", "dest_contents", "shrink")
         out = {k: result.get(k) for k in keep}
         for side in ("source", "dest_drive"):
             d = result.get(side)

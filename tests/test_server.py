@@ -141,6 +141,14 @@ class CloneApiTests(unittest.TestCase):
         self.app.plan = {"mode": "clone", "image": self.sys.dest_file, "dest_drive": {"path": self.sys.dest_file}}
         self.assertNotIn("rescued copy", " ".join(self.call("clone/plan", self.body)["warnings"]))
 
+    def test_a_smaller_target_reports_whether_the_files_would_fit(self):
+        self.sys.used_bytes = lambda part, scratch: 1024 * 1024
+        GIB = 1024**3
+        self.sys.tweak = lambda devs: (devs[0].update(size=200 * GIB), devs[1].update(size=100 * GIB))
+        p = self.call("clone/plan", self.body)
+        self.assertFalse(p["ok"])
+        self.assertTrue(p["shrink"]["known"] and p["shrink"]["fits"])
+
     def test_start_needs_the_typed_confirmation(self):
         for word in ("", "yes", "erase me"):
             with self.assertRaises(server.ApiError) as cm:
