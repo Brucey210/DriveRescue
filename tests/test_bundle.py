@@ -74,6 +74,7 @@ class BundleTests(unittest.TestCase):
             proc.terminate()
             proc.wait(timeout=10)
 
+    @unittest.skipUnless(os.geteuid() == 0, "start.sh must run as root, and re-launches itself with sudo otherwise")
     def test_start_script_check_mode_reports_and_exits(self):
         start = os.path.join(self.tmp, "stick", "drive-rescue", "start.sh")
         r = subprocess.run(["sh", start, "--check"], capture_output=True, text=True, timeout=60)

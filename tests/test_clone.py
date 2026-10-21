@@ -135,6 +135,7 @@ class ResizeTests(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
+    @unittest.skipUnless(have_loop(), "real loop devices need root")
     def test_the_whole_bigger_drive_becomes_usable(self):
         before = partitions.read_layout(self.dst)
         self.assertEqual(before["hdr"]["alt"], self.SRC_MB * MIB // S - 1)  # the stale picture of the small drive
@@ -181,6 +182,7 @@ class ResizeTests(unittest.TestCase):
         self.assertFalse(res["extended"])
         self.assertEqual(open(same, "rb").read(), before)
 
+    @unittest.skipUnless(have_loop(), "real loop devices need root")
     def test_last_partition_grows_when_there_is_no_recovery(self):
         build_gpt(self.dst, self.SRC_MB * MIB // S, [(ESP, 2048, 18431, "EFI"), (DATA, self.main_start, self.rec_start - 1, "Windows")])
         res = clone.finish_layout(self.sysm, self.dst)
@@ -189,6 +191,7 @@ class ResizeTests(unittest.TestCase):
         self.assertEqual(now["parts"][-1]["end"], self.DST_MB * MIB // S - 34)
         check_gpt(self, self.dst, self.DST_MB * MIB // S)
 
+    @unittest.skipUnless(have_loop(), "real loop devices need root")
     def test_mbr_partition_grows(self):
         disk = os.path.join(self.tmp, "mbr.disk")
         subprocess.run(["truncate", "-s", "32M", disk], check=True)
