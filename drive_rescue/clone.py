@@ -105,7 +105,10 @@ def used_estimate(system, source):
     for part in source["partitions"]:
         if not part.get("fstype"):
             continue
-        used = system.used_bytes(part, scratch)
+        try:
+            used = system.used_bytes(part, scratch)
+        except OSError:  # measuring is a courtesy: if it can't be done, the plan carries on without it
+            return None
         if used is None:
             return None
         total += used
