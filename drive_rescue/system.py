@@ -165,6 +165,10 @@ class System:
         rc, _out, err = self.run(cmd, timeout=30)
         return rc == 0, err.strip()
 
+    def close_kiosk(self):
+        """Close the full-screen window (the one started with the kiosk profile)."""
+        self.run(["pkill", "-f", "drive-rescue-" + "profile"], timeout=10)
+
     def firmware(self):
         """How this computer started: "uefi" or "bios"."""
         return "uefi" if os.path.isdir("/sys/firmware/efi") else "bios"

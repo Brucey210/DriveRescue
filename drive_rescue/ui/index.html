@@ -181,6 +181,7 @@ details.adv[open] summary svg{transform:rotate(90deg)}
   <header>
     <div class="brand"><div class="logo" id="logo"></div><span>Drive Rescue</span></div>
     <div class="tools"><span id="stepLabel" style="margin-right:10px"></span>
+      <button type="button" class="tbtn pw" data-act="desktop" hidden title="Close this window and show the Linux desktop">Desktop</button>
       <button type="button" class="tbtn pw" data-act="reboot" hidden>Restart</button>
       <button type="button" class="tbtn pw" data-act="poweroff" hidden>Shut down</button>
       <button type="button" class="tbtn" data-act="theme" aria-label="Switch between light and dark" title="Light / dark">&#9680;</button>
@@ -838,6 +839,12 @@ document.addEventListener("click", async ev => {
       if (confirm(act === "poweroff" ? "Shut down the computer? Make sure no copy is running." : "Restart the computer? Make sure no copy is running.")) {
         await api("system/power", { action: act });
         document.body.innerHTML = '<p style="font:1.25rem system-ui;padding:3rem;text-align:center">' + (act === "poweroff" ? "Shutting down… you can unplug the drives when the screen goes dark." : "Restarting…") + "</p>";
+      }
+    }
+    else if (act === "desktop") {
+      if (confirm("Close Drive Rescue and show the Linux desktop?\n\nA copy that is running keeps going in the background. To come back, open \"Drive Rescue\" on the desktop.")) {
+        await api("system/desktop", {});
+        document.body.innerHTML = '<p style="font:1.25rem system-ui;padding:3rem;text-align:center">Opening the desktop…</p>';
       }
     }
     else if (act === "theme") toggleTheme();

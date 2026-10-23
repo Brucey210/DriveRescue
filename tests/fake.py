@@ -50,6 +50,9 @@ class FakeSystem(System):
     def which(self, name):
         return SHIM if name in ("ddrescue", "gddrescue") else shutil.which(name)
 
+    def close_kiosk(self):
+        self.kiosk_closed = True
+
     def set_readonly(self, path):
         self.calls.append(("setro", path))
         return True, ""

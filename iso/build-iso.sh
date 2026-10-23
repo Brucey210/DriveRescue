@@ -58,6 +58,21 @@ Exec=sh /opt/drive-rescue/start.sh --kiosk
 Terminal=false
 X-GNOME-Autostart-enabled=true
 DESK
+# A launcher so Drive Rescue can be opened again after leaving it for the desktop.
+mkdir -p "$WORK/root/usr/share/applications" "$WORK/root/usr/share/pixmaps" "$WORK/root/root/Desktop"
+cp "$ROOT/assets/brand/mark-256.png" "$WORK/root/usr/share/pixmaps/drive-rescue.png"
+cat > "$WORK/root/usr/share/applications/drive-rescue-open.desktop" <<'DESK'
+[Desktop Entry]
+Type=Application
+Name=Drive Rescue
+Comment=Rescue files from a failing drive, or clone a drive
+Exec=sh /opt/drive-rescue/start.sh --kiosk
+Icon=drive-rescue
+Terminal=false
+Categories=System;
+DESK
+cp "$WORK/root/usr/share/applications/drive-rescue-open.desktop" "$WORK/root/root/Desktop/Drive Rescue.desktop"
+chmod 755 "$WORK/root/root/Desktop/Drive Rescue.desktop"
 # Make it look like Drive Rescue everywhere, not like the system underneath.
 BRAND="$ROOT/assets/brand"
 cat > "$WORK/root/etc/os-release" <<'OSR'

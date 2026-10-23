@@ -30,6 +30,9 @@ DIRECTIONS = ("forward", "backward")
 BUSY = ("running", "pausing", "finishing")
 
 
+DESKTOP_FLAG = os.environ.get("DRIVE_RESCUE_DESKTOP_FLAG", "/tmp/drive-rescue-desktop")
+
+
 class ApiError(Exception):
     def __init__(self, message, status=400, **extra):
         super().__init__(message)
@@ -87,7 +90,7 @@ class App:
         self.last_task = None     # the last file-recovery summary, kept for the report
         self._lock = threading.RLock()
         self.routes = {
-            ("GET", "system/info"): self.system_info, ("POST", "system/power"): self.system_power,
+            ("GET", "system/info"): self.system_info, ("POST", "system/power"): self.system_power, ("POST", "system/desktop"): self.system_desktop,
             ("GET", "preflight"): lambda q, b: preflight_mod.run_checks(self.system.which),
             ("GET", "drives"): self.drives, ("GET", "health"): self.health,
             ("POST", "clone/plan"): self.clone_plan, ("POST", "clone/start"): self.clone_start,
@@ -206,6 +209,19 @@ class App:
         ok, err = self.system.power(action)
         if not ok:
             raise ApiError(f"The computer did not respond: {err}", 500)
+        return {"ok": True}
+
+    def system_desktop(self, q, b):
+        """Close the full-screen window and show the Linux desktop. Drive Rescue keeps running in the
+        background (a copy in progress carries on) and can be opened again from the desktop."""
+        if not self.power_allowed():
+            raise ApiError("Leaving to the desktop isn't available on this computer.", 403)
+        try:
+            with open(DESKTOP_FLAG, "w") as fh:
+                fh.write("1")
+        except OSError as err:
+            raise ApiError(f"Could not leave the program: {err}", 500)
+        self.system.close_kiosk()
         return {"ok": True}
 
     # ---- cloning a whole drive

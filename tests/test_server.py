@@ -193,6 +193,22 @@ class PowerTests(AppCase):
         self.assertEqual(cm.exception.status, 403)
         self.assertEqual(self.sys.power_calls, [])
 
+    def test_desktop_only_on_the_boot_disc_and_closes_the_window(self):
+        import tempfile
+        flag = os.path.join(tempfile.mkdtemp(), "flag")
+        old, server.DESKTOP_FLAG = server.DESKTOP_FLAG, flag
+        try:
+            with self.assertRaises(server.ApiError) as cm:
+                self.call("POST", "system/desktop", {})
+            self.assertEqual(cm.exception.status, 403)
+            self.assertFalse(os.path.exists(flag))
+            os.environ["DRIVE_RESCUE_ALLOW_POWER"] = "1"
+            self.call("POST", "system/desktop", {})
+            self.assertTrue(os.path.exists(flag))
+            self.assertTrue(self.sys.kiosk_closed)
+        finally:
+            server.DESKTOP_FLAG = old
+
     def test_allowed_on_the_boot_disc_but_not_during_a_copy(self):
         os.environ["DRIVE_RESCUE_ALLOW_POWER"] = "1"
         self.assertTrue(self.call("GET", "system/info")["power"])
