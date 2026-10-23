@@ -3,6 +3,9 @@ name: Inspect the base ISO
 # A diagnostic: reads the boot files out of the SystemRescue ISO and prints them on the run page,
 # so the boot changes can be written against the real files.
 on:
+  push:
+    branches: ["iso-direct-boot"]
+    paths: [".github/workflows/inspect-iso.yml"]
   workflow_dispatch:
     inputs:
       systemrescue_version:
@@ -19,7 +22,7 @@ jobs:
 
       - name: Download SystemRescue
         env:
-          V: ${{ inputs.systemrescue_version }}
+          V: ${{ inputs.systemrescue_version || '13.02' }}
         run: |
           set -e
           curl -fL --retry 3 -o base.iso "https://fastly-cdn.system-rescue.org/releases/$V/systemrescue-$V-amd64.iso"
