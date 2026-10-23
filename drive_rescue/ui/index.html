@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Drive Rescue</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 128 128'><defs><linearGradient id='drt' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%2317A9A1'/><stop offset='1' stop-color='%230A6560'/></linearGradient></defs><rect x='4' y='4' width='120' height='120' rx='30' fill='url(%23drt)'/><circle cx='64' cy='64' r='33' fill='none' stroke='%23FFFFFF' stroke-width='24'/><circle cx='64' cy='64' r='33' fill='none' stroke='%23E8A63A' stroke-width='24' stroke-dasharray='25.9 25.9' transform='rotate(22.5 64 64)'/><circle cx='64' cy='64' r='21' fill='%230A5C58'/><circle cx='64' cy='64' r='6' fill='%23FFFFFF'/><circle cx='64' cy='64' r='2.2' fill='%230A5C58'/></svg>">
 <script>(function(){var t;try{t=localStorage.getItem('dr-theme')}catch(e){}if(t!=='light'&&t!=='dark')t=(window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';document.documentElement.dataset.theme=t})();</script>
 <style>
 :root{
@@ -31,7 +32,9 @@ button,input,select{font:inherit;color:inherit}
 .app{max-width:1040px;margin:0 auto;width:100%;flex:1;display:flex;flex-direction:column}
 header{display:flex;align-items:center;justify-content:space-between;padding:22px 40px 0}
 .brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:1.0625rem}
-.logo{width:32px;height:32px;border-radius:9px;background:var(--accent);color:var(--on-accent);display:flex;align-items:center;justify-content:center}
+.logo{width:32px;height:32px;display:flex}.logo svg{width:100%;height:100%}
+#splash{position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;background:radial-gradient(ellipse at 50% 40%,#12767a 0%,#0a3f44 55%,#06272b 100%);color:#fff;transition:opacity .5s}
+#splash svg{width:116px;height:116px;filter:drop-shadow(0 10px 30px rgba(0,0,0,.35))}#splash b{font-size:2rem;letter-spacing:.2px}#splash span{opacity:.75;font-size:1rem}#splash.gone{opacity:0;pointer-events:none}
 #stepLabel{font-size:0.8125rem;color:var(--muted)}
 nav{display:flex;gap:10px;padding:16px 40px 0}
 nav div{flex:1;display:flex;flex-direction:column;gap:8px;font-size:0.875rem;color:var(--muted);font-weight:500}
@@ -173,6 +176,7 @@ details.adv[open] summary svg{transform:rotate(90deg)}
 </style>
 </head>
 <body>
+<div id="splash" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><defs><linearGradient id="drs" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#17A9A1"/><stop offset="1" stop-color="#0A6560"/></linearGradient></defs><rect x="4" y="4" width="120" height="120" rx="30" fill="url(#drs)"/><circle cx="64" cy="64" r="33" fill="none" stroke="#FFFFFF" stroke-width="24"/><circle cx="64" cy="64" r="33" fill="none" stroke="#E8A63A" stroke-width="24" stroke-dasharray="25.9 25.9" transform="rotate(22.5 64 64)"/><circle cx="64" cy="64" r="21" fill="#0A5C58"/><circle cx="64" cy="64" r="6" fill="#FFFFFF"/><circle cx="64" cy="64" r="2.2" fill="#0A5C58"/></svg><b>Drive Rescue</b><span>Rescue your files. Clone your drive.</span></div>
 <div class="page"><div class="app">
   <header>
     <div class="brand"><div class="logo" id="logo"></div><span>Drive Rescue</span></div>
@@ -250,7 +254,7 @@ async function api(path, body) {
 
 // ------------------------------------------------------------------ frame
 function chrome() {
-  $("#logo").innerHTML = I.logo;
+  $("#logo").innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><defs><linearGradient id="drt" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#17A9A1"/><stop offset="1" stop-color="#0A6560"/></linearGradient></defs><rect x="4" y="4" width="120" height="120" rx="30" fill="url(#drt)"/><circle cx="64" cy="64" r="33" fill="none" stroke="#FFFFFF" stroke-width="24"/><circle cx="64" cy="64" r="33" fill="none" stroke="#E8A63A" stroke-width="24" stroke-dasharray="25.9 25.9" transform="rotate(22.5 64 64)"/><circle cx="64" cy="64" r="21" fill="#0A5C58"/><circle cx="64" cy="64" r="6" fill="#FFFFFF"/><circle cx="64" cy="64" r="2.2" fill="#0A5C58"/></svg>';
   const nav = NAV[S.mode], at = nav.findIndex(x => x[0] === S.step);
   $("#stepLabel").textContent = `Step ${at + 1} of ${nav.length}`;
   $("#steps").innerHTML = nav.map(([id, t], i) => {
@@ -926,11 +930,15 @@ setZoom(S.zoom || 0);
 applyTheme();
 api("system/info").then(r => { S.power = !!r.power; if (r.power) document.querySelectorAll(".pw").forEach(b => b.hidden = false); }).catch(() => {});
 (async function boot() {
+  const shown = Date.now();
+  const hideSplash = () => { const sp = $("#splash"); if (!sp) return;
+    setTimeout(() => { sp.classList.add("gone"); setTimeout(() => sp.remove(), 600); }, Math.max(0, 1100 - (Date.now() - shown))); };
   try {
     const s = await api("status");
-    if (s.state !== "none") { S.mode = s.mode === "clone" ? "clone" : "rescue"; S.status = s; S.lastState = s.state; go(3); return; }
+    if (s.state !== "none") { S.mode = s.mode === "clone" ? "clone" : "rescue"; S.status = s; S.lastState = s.state; go(3); hideSplash(); return; }
   } catch (e) { /* fall through to the welcome screen */ }
   go(1);
+  hideSplash();
 })();
 </script>
 </body>

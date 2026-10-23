@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="768" viewBox="0 0 1024 768">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="42%" r="75%"><stop offset="0" stop-color="#0F4A47"/><stop offset="0.55" stop-color="#082B2A"/><stop offset="1" stop-color="#051716"/></radialGradient>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#2FD0C6" stop-opacity="0.28"/><stop offset="1" stop-color="#2FD0C6" stop-opacity="0"/></radialGradient>
+  </defs>
+  <rect width="1024" height="768" fill="url(#bg)"/>
+  <circle cx="512.0" cy="334.22222222222223" r="234.66666666666669" fill="url(#glow)"/>
+  <g transform="translate(419.55555555555554 149.33333333333331) scale(1.4444444444444444)">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#17A9A1"/><stop offset="1" stop-color="#0A6560"/></linearGradient>
+  </defs>
+  <rect x="4" y="4" width="120" height="120" rx="30" fill="url(#tile)"/>
+  <circle cx="64" cy="64" r="33" fill="none" stroke="#FFFFFF" stroke-width="24"/>
+  <circle cx="64" cy="64" r="33" fill="none" stroke="#E8A63A" stroke-width="24" stroke-dasharray="25.9 25.9" transform="rotate(22.5 64 64)"/>
+  <circle cx="64" cy="64" r="21" fill="#0A5C58"/>
+  <circle cx="64" cy="64" r="6" fill="#FFFFFF"/>
+  <circle cx="64" cy="64" r="2.2" fill="#0A5C58"/>
+</g>
+  <text x="512.0" y="391.1111111111111" text-anchor="middle" font-family="Inter, system-ui, Segoe UI, sans-serif" font-size="65.42222222222223" font-weight="700" fill="#F2F8F8" letter-spacing="-1.0666666666666667">Drive Rescue</text>
+  <text x="512.0" y="440.8888888888889" text-anchor="middle" font-family="Inter, system-ui, Segoe UI, sans-serif" font-size="24.177777777777777" font-weight="400" fill="#9CC9C6">Rescue your files. Clone your drive.</text>
+  <text x="512.0" y="704.0" text-anchor="middle" font-family="Inter, system-ui, Segoe UI, sans-serif" font-size="19.91111111111111" font-weight="500" fill="#6FA9A5" letter-spacing="2.8444444444444446">STARTING…</text>
+</svg>
