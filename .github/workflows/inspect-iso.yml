@@ -1,0 +1,44 @@
+name: Inspect the base ISO
+
+# A diagnostic: reads the boot files out of the SystemRescue ISO and prints them on the run page,
+# so the boot changes can be written against the real files.
+on:
+  workflow_dispatch:
+    inputs:
+      systemrescue_version:
+        description: "SystemRescue version to look at"
+        default: "13.02"
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Install the tools
+        run: sudo apt-get update && sudo apt-get install -y xorriso squashfs-tools
+
+      - name: Download SystemRescue
+        env:
+          V: ${{ inputs.systemrescue_version }}
+        run: |
+          set -e
+          curl -fL --retry 3 -o base.iso "https://fastly-cdn.system-rescue.org/releases/$V/systemrescue-$V-amd64.iso"
+
+      - name: Read the boot files
+        shell: bash
+        run: |
+          set +e
+          mkdir x && xorriso -osirrox on -indev base.iso -extract / x >/dev/null 2>&1
+          chmod -R u+rwX x
+          emit() {  # emit TITLE  (text on stdin) -> one annotation on the run page
+            python3 -c "import sys; t=sys.stdin.read()[:58000].replace('%','%25').replace('\r','%0D').replace('\n','%0A'); print('::notice title=$1::'+t)"
+          }
+          { echo "ISO tree (3 levels, big image folder trimmed)"; (cd x; find . -maxdepth 3 | sort | head -400); } | emit "1 tree"
+          { for f in $(cd x; find . -type f \( -name '*.cfg' -o -name '*.conf' -o -name '*.yaml' -o -name '*.msg' \) -not -path '*/grub/*' | sort | head -60); do echo "=== $f"; cat "x/$f"; done; } | emit "2 syslinux and settings"
+          { for f in $(cd x; find . -type f \( -name 'grub*.cfg' -o -path '*/grub/*.cfg' -o -path './loader/*' -o -path './EFI/*.cfg' -o -path './EFI/*.conf' \) | sort | head -40); do echo "=== $f"; cat "x/$f"; done; } | emit "3 grub and uefi"
+          SFS=$(find x -name airootfs.sfs | head -1)
+          echo "sfs: $SFS" 
+          { echo "== file names mentioning branding"; unsquashfs -ll "$SFS" 2>/dev/null | grep -i -e sysresc -e wallpaper -e background -e plymouth -e splash -e lightdm -e autostart | awk '{print $NF}' | head -150; } | emit "4 branding files"
+          unsquashfs -no-progress -d r "$SFS" etc >/dev/null 2>&1
+          { for f in etc/os-release etc/issue etc/motd etc/hostname etc/zsh/zlogin etc/zsh/zprofile etc/systemd/system/getty@tty1.service.d/autologin.conf; do echo "=== $f"; cat "r/$f" 2>&1 | head -80; done; echo "=== sysrescue-ish files in etc"; find r/etc -iname '*sysresc*' | head -40; } | emit "5 etc"
+          { for f in $(find r/etc -iname '*sysresc*' -type f | head -12); do echo "=== $f"; head -60 "$f"; done; } | emit "6 sysrescue files"
