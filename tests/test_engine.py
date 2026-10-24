@@ -508,7 +508,7 @@ class JobTests(Base):
 
     def test_battery_use_is_reported(self):
         job = self.job()
-        self.fs.power = {"on_battery": True, "percent": 41}
+        self.fs.power_state = {"on_battery": True, "percent": 41}
         self.assertEqual(job.snapshot()["power"], {"on_battery": True, "percent": 41})
 
     def test_a_drive_that_comes_back_under_a_new_name_is_found_again(self):

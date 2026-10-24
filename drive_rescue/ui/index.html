@@ -475,6 +475,22 @@ function banner(kind, html) {
   const icon = kind === "warn" || kind === "bad" ? I.warn : kind === "plain" ? "" : I.check;
   return `<div class="banner ${kind}" role="${kind === "bad" ? "alert" : "status"}">${icon}<span>${html}</span></div>`;
 }
+function checklist(p) {
+  const items = (p && p.checklist) || [];
+  if (!items.length) return "";
+  return `<details class="adv" ${items.some(i => !i.ok) ? "open" : ""}><summary>${I.chev}<span>Before you start</span><small>${items.every(i => i.ok) ? "All good" : "Something needs a look"}</small></summary>
+    <div style="padding:2px 18px 14px;display:flex;flex-direction:column;gap:8px">${items.map(i => `<div style="display:flex;gap:10px;align-items:flex-start"><i style="margin-top:6px;width:10px;height:10px;border-radius:50%;flex:none;background:${i.ok ? "var(--ok-ink)" : "var(--amber)"}"></i><span>${esc(i.text)}</span></div>`).join("")}</div></details>`;
+}
+function readTest() {
+  if (!S.source) return "";
+  const a = (S.assess || {})[S.source];
+  const tag = { good: "ok", fair: "warn", poor: "warn", bad: "bad" };
+  const names = { good: "Looks healthy", fair: "Starting to struggle", poor: "Struggling", bad: "In poor shape" };
+  const body = !a ? "" : a.loading ? `<p class="muted" style="margin:10px 0 0">Reading… this takes up to 25 seconds.</p>`
+    : a.error ? `<div style="margin-top:10px">${banner("bad", esc(a.error))}</div>`
+    : `<p style="margin:10px 0 0"><span class="tag ${tag[a.rating]}">${names[a.rating]}</span> <span class="muted">${a.total - a.hung - a.errors - a.slow} of ${a.total} spots read fine, ${a.slow} slow, ${a.errors + a.hung} failed</span></p><p class="muted" style="margin:6px 0 0">${esc(a.text)}</p>`;
+  return `<div class="card"><div class="row2"><div><b>Quick read test</b><br><span class="muted">Reads 40 small spots across the drive to judge how it is doing. Optional. It only reads.</span></div>${btn("assess", "Run the test", "", a && a.loading ? "disabled" : "")}</div>${body}</div>`;
+}
 function notice() {
   if (S.mode === "clone") return cloneNotice();
   const el = $("#notice");
@@ -495,6 +511,8 @@ function notice() {
     }
   }
   html += healthCard(S.source, S.mode === "clone" ? "Drive to copy" : "Failing drive");
+  if (p && p.ok) html += checklist(p);
+  html += readTest();
   el.innerHTML = html ? `<div style="display:flex;flex-direction:column;gap:8px">${html}</div>` : "";
 }
 function drivesFooter() {
@@ -593,12 +611,14 @@ function cloneNotice() {
     }
   }
   html += healthCard(S.source, "Drive to copy");
+  if (p && p.ok) html += checklist(p);
   el.innerHTML = html ? `<div style="display:flex;flex-direction:column;gap:8px">${html}</div>` : "";
   if (box) {
     const show = p && p.ok;
     if (show && !box.firstChild) {
       box.innerHTML = `<label class="confirm">Type <b>ERASE</b> to confirm
-        <input id="confirmText" type="text" autocomplete="off" spellcheck="false" placeholder="ERASE"></label>`;
+        <input id="confirmText" type="text" autocomplete="off" spellcheck="false" placeholder="ERASE"></label>
+        <label class="opt" style="margin-top:10px"><input type="checkbox" id="optVerifyClone" ${S.verifyClone !== false ? "checked" : ""}><span>Check the clone afterwards<small>Reads both drives again and compares them. Takes about as long as the copy, and catches a faulty new drive.</small></span></label>`;
       $("#confirmText").value = S.confirm;
     } else if (!show) box.innerHTML = "";
   }
@@ -684,6 +704,11 @@ function paintCopy(s) {
   if (s.state === "paused" && s.quick_done && S.opts.pause_after_quick && !clone)
     note += banner("", "<b>Everything that reads easily is now safe.</b> Press <b>Get my important files</b> to pick what you need first. When you are ready, come back and press Resume to go after the harder parts.");
   if (s.speed_note) note += banner("warn", esc(s.speed_note));
+  if (s.verify && s.state === "done") {
+    const v = s.verify;
+    note += v.different.length ? banner("bad", `<b>The copy does not match the drive in ${v.different.length} of ${v.checked + v.unreadable} spots checked.</b> The cable, the port or the healthy drive may be at fault. Try the copy again, with another cable if possible.`)
+      : v.checked ? banner("", `Checked ${v.checked} spread-out spots of the copy against the drive. All matched.${v.unreadable ? ` (${v.unreadable} couldn't be read a second time.)` : ""}`) : "";
+  }
   if (s.power && s.power.on_battery && (s.state === "running" || s.state === "paused"))
     note += banner("warn", `This computer is running on its battery${s.power.percent != null ? " (" + s.power.percent + "%)" : ""}. Plug it in, or it could switch off part way through.`);
   $("#cNotice").innerHTML = note ? `<div style="display:flex;flex-direction:column;gap:8px">${note}</div>` : "";
@@ -983,6 +1008,7 @@ function viewDone() {
     <div class="card"><h2>Where to find them</h2><div class="mono">${esc(folder)}</div>
       <p class="muted" style="margin:8px 0 0">Open this folder on the drive you chose to see what was recovered.</p></div>
     <div class="card"><h2>Summary</h2><b>${t.copied || 0}</b> ${(t.copied === 1 ? "file " : "files ") + (t.kind === "carve" ? "found" : "recovered")}${t.bytes ? ` (${esc(t.bytes_text)})` : ""}
+      ${t.organized ? `<p class="muted" style="margin:8px 0 0">Sorted into folders: ${esc(Object.entries(t.organized.groups).map(([g, n]) => n + " " + g.toLowerCase()).join(", ") || "nothing")}${t.organized.tiny ? `. ${t.organized.tiny} tiny scraps and ` : ""}${t.organized.duplicates ? `${t.organized.tiny ? "" : ". "}${t.organized.duplicates} exact duplicates were set aside in their own folders` : ""}.</p>` : ""}
       ${t.damaged_count ? `<p style="margin:8px 0 0"><b>${t.damaged_count} ${t.damaged_count === 1 ? "file was" : "files were"} saved with missing parts</b> and may not open properly: ${esc((t.damaged || []).slice(0, 5).map(f => f.path.split("/").pop()).join(", "))}${t.damaged_count > 5 ? ", and more" : ""}.</p>` : ""}
       ${t.failed_count ? `<p class="muted" style="margin:8px 0 0">${t.failed_count} could not be read: ${esc((t.failed || []).slice(0, 5).map(f => f.path.split("/").pop()).join(", "))}${t.failed_count > 5 ? ", and more" : ""}.</p>` : ""}</div>
     ${reportCard}`;
@@ -1073,7 +1099,7 @@ document.addEventListener("click", async ev => {
     else if (act === "again") { S.status = null; S.source = S.dest = ""; S.plan = null; S.confirm = ""; $("#footer").dataset.sig = ""; go(1); }
     else if (act === "startClone") {
       el.disabled = true;
-      try { await api("clone/start", { source: S.source, dest: S.dest, confirm: S.confirm }); S.status = null; S.lastState = null; $("#footer").dataset.sig = ""; go(3); }
+      try { await api("clone/start", { source: S.source, dest: S.dest, confirm: S.confirm, opts: { verify: S.verifyClone !== false } }); S.status = null; S.lastState = null; $("#footer").dataset.sig = ""; go(3); }
       catch (e) { S.plan = { ok: false, errors: (e.data && e.data.errors && e.data.errors.length) ? e.data.errors : [e.message], warnings: (e.data && e.data.warnings) || [] }; notice(); drivesFooter(); }
     }
     else if (act === "backCopy") {
@@ -1090,6 +1116,11 @@ document.addEventListener("click", async ev => {
     else if (act === "backRecover") go(4);
     else if (act === "open") { S.rec.preview = null; await loadDir(rel); S.rec.sel = new Set(); recoverPaint(); }
     else if (act === "crumb") { S.rec.preview = null; await loadDir(rel); recoverPaint(); }
+    else if (act === "assess") {
+      const path = S.source; S.assess = S.assess || {}; S.assess[path] = { loading: true }; notice();
+      try { S.assess[path] = await api("assess?path=" + encodeURIComponent(path)); } catch (e) { S.assess[path] = { error: e.message }; }
+      notice();
+    }
     else if (act === "unlock") { el.disabled = true; try { await unlockSection(el.dataset.id); } finally { el.disabled = false; } }
     else if (act === "preview") {
       const name = rel.split("/").pop();
@@ -1123,6 +1154,7 @@ document.addEventListener("change", ev => {
   const t = ev.target;
   if (t.name === "source") { S.source = t.value; const d = S.drives.find(x => x.partitions.some(p => p.path === S.dest)); if (d && d.path === S.source) S.dest = ""; lists(); schedulePlan(); }
   else if (t.name === "dest") { S.dest = t.value; lists(); schedulePlan(); }
+  else if (t.id === "optVerifyClone") { S.verifyClone = t.checked; }
   else if (t.id === "optThorough") { S.opts.thorough = t.checked; advHint(); schedulePlan(); }
   else if (t.id === "optPriority") { S.opts.pause_after_quick = t.checked; advHint(); schedulePlan(); }
   else if (t.id === "optSound") { S.sound = t.checked; try { localStorage.setItem("dr-sound", t.checked ? "1" : "0"); } catch (e) { /* fine */ } }

@@ -32,6 +32,14 @@ def build_image_report(plan, task, when=None):
         what = "files found by scanning" if task.get("kind") == "carve" else "files recovered"
         lines.append("FILES")
         lines.append(f"  {task.get('copied', 0)} {what}" + (f" ({task['bytes_text']})" if task.get("bytes") else ""))
+        org = task.get("organized")
+        if org:
+            parts = [f"{n} {g.lower()}" for g, n in sorted(org["groups"].items())]
+            lines.append("  Sorted into folders: " + (", ".join(parts) or "nothing"))
+            if org.get("tiny"):
+                lines.append(f"  {org['tiny']} tiny scraps set aside in _tiny-scraps")
+            if org.get("duplicates"):
+                lines.append(f"  {org['duplicates']} exact duplicates set aside in _duplicates")
         if task.get("damaged_count"):
             lines.append(f"  {task['damaged_count']} copied with missing parts (the unreadable pieces are blank, "
                          f"so these may not open properly):")
@@ -91,6 +99,14 @@ def build_report(plan, snap, health=None, task=None, when=None):
                 lines.append(f"    - {f['path']} ({f['reason']})")
             if task["failed_count"] > 20:
                 lines.append("    - and more")
+        org = task.get("organized")
+        if org:
+            parts = [f"{n} {g.lower()}" for g, n in sorted(org["groups"].items())]
+            lines.append("  Sorted into folders: " + (", ".join(parts) or "nothing"))
+            if org.get("tiny"):
+                lines.append(f"  {org['tiny']} tiny scraps set aside in _tiny-scraps")
+            if org.get("duplicates"):
+                lines.append(f"  {org['duplicates']} exact duplicates set aside in _duplicates")
         if task.get("damaged_count"):
             lines.append(f"  {task['damaged_count']} copied with missing parts (the unreadable pieces are blank, "
                          f"so these may not open properly):")

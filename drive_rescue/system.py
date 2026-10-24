@@ -145,6 +145,11 @@ class System:
                 continue
         return {"on_battery": on_battery and not mains_online, "percent": percent}
 
+    def spot_reader(self, path, size):
+        """read(offset) used by the quick read test (the tests swap in a pretend one)."""
+        from . import assess
+        return assess.real_reader(path, size)
+
     def inhibit_sleep(self):
         """Keep the computer awake (no sleep, no idle, lid closing ignored) until .close() is called."""
         if not shutil.which("systemd-inhibit"):

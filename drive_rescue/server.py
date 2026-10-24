@@ -21,6 +21,7 @@ from . import report as report_mod
 from . import plan as plan_mod
 from .job import ImageJob, JobError
 from . import images as images_mod
+from . import assess as assess_mod
 from .recover import RecoverError, Recovery
 from .sessionlog import SessionLog
 from .system import System
@@ -99,7 +100,7 @@ class App:
         self.routes = {
             ("GET", "system/info"): self.system_info, ("POST", "system/power"): self.system_power, ("POST", "system/desktop"): self.system_desktop,
             ("GET", "preflight"): lambda q, b: preflight_mod.run_checks(self.system.which),
-            ("GET", "drives"): self.drives, ("GET", "health"): self.health,
+            ("GET", "drives"): self.drives, ("GET", "health"): self.health, ("GET", "assess"): self.assess,
             ("POST", "clone/plan"): self.clone_plan, ("POST", "clone/start"): self.clone_start,
             ("POST", "plan"): self.make_plan, ("POST", "start"): self.start,
             ("POST", "network/connect"): self.network_connect, ("POST", "network/disconnect"): self.network_disconnect,
@@ -133,6 +134,21 @@ class App:
             raise ApiError("That drive was not found.")
         return drives_mod.check_health(self.system, path)
 
+    def assess(self, q, b):
+        """A quick read test of a few spots on a drive, only when the person asks for it."""
+        path = (q.get("path") or [""])[0]
+        drive = next((d for d in drives_mod.list_drives(self.system) if d["path"] == path), None)
+        if drive is None:
+            raise ApiError("That drive was not found.")
+        if drive["is_boot"]:
+            raise ApiError("That is the rescue USB stick.")
+        if self.job and self.job.state in BUSY:
+            raise ApiError("A copy is running. Wait for it to finish first.", 409)
+        result = assess_mod.read_test(path, drive["size"], reader=self.system.spot_reader(path, drive["size"]))
+        self.log.log(f"Read test of {drive['name']}: {result['rating']} "
+                     f"({result['errors']} errors, {result['slow']} slow, {result['hung']} stuck of {result['total']})")
+        return result
+
     def _network_for(self, dest):
         """A destination called "network" means the shared folder connected earlier."""
         if dest != "network":
@@ -144,7 +160,27 @@ class App:
     def make_plan(self, q, b):
         result = plan_mod.make_plan(self.system, b.get("source", ""), b.get("dest", ""), b.get("folder"),
                                     clean_opts(b.get("opts")), prepare=False, network=self._network_for(b.get("dest")))
-        return plan_summary(result)
+        summary = plan_summary(result)
+        summary["checklist"] = self._checklist(result)
+        return summary
+
+    def _checklist(self, result, clone=False):
+        """The things worth being sure of before starting, each marked as fine or not."""
+        items = []
+        if result.get("ok"):
+            if clone:
+                items.append({"ok": True, "text": "The new drive is big enough to hold everything"})
+                items.append({"ok": True, "text": "The original drive is only read from, never changed"})
+            else:
+                items.append({"ok": True, "text": f"There is enough room on the healthy drive ({result.get('free_text') or 'checked'} free, "
+                                                  f"{result.get('need_text', '')} needed)".replace(" ()", "")})
+                items.append({"ok": True, "text": "The failing drive is only read from, never written to"})
+        power = self.system.power_status()
+        if power.get("on_battery"):
+            items.append({"ok": False, "text": "The computer is running on battery. Plug it in so it can't switch off part way."})
+        else:
+            items.append({"ok": True, "text": "The computer is plugged in (or has no battery)"})
+        return items
 
     # ---- saving to a shared folder on the network
     NET_HOST = re.compile(r"^[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$")
@@ -257,7 +293,9 @@ class App:
     def clone_plan(self, q, b):
         result = clone_mod.make_clone_plan(self.system, b.get("source", ""), b.get("dest", ""))
         self._warn_if_rescue_copy_is_on(result)
-        return self._clone_summary(result)
+        summary = self._clone_summary(result)
+        summary["checklist"] = self._checklist(result, clone=True)
+        return summary
 
     def clone_start(self, q, b):
         with self._lock:

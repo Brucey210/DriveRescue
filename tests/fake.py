@@ -66,11 +66,20 @@ class FakeSystem(System):
     def dm_remove(self, name):
         self.calls.append(("dm_remove", name))
 
+    def spot_reader(self, path, size):
+        bad = getattr(self, "bad_spots", set())
+
+        def read(offset):
+            if offset in bad:
+                raise OSError(5, "io")
+            return 4096
+        return read
+
     def is_readonly(self, path):
         return True
 
     def power_status(self):
-        return getattr(self, "power", {"on_battery": False, "percent": None})
+        return getattr(self, "power_state", {"on_battery": False, "percent": None})
 
     def inhibit_sleep(self):
         self.calls.append(("inhibit",))

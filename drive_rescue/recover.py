@@ -11,6 +11,7 @@ import subprocess
 import threading
 
 from . import mapfile as mapfile_mod
+from . import tidy
 from .drives import _mountpoints
 from .plan import MOUNT_ROOT
 from .util import human_size
@@ -612,6 +613,13 @@ class Recovery:
 
     def _carve_worker(self):
         rc = self._proc.wait()
+        if rc == 0 and not self._cancel and self.task.get("outdir"):
+            try:
+                self.task["message"] = "Tidying what was found…"
+                self.task["organized"] = tidy.organize(self.task["outdir"], cancelled=lambda: self._cancel)
+                self.task["message"] = ""
+            except OSError:
+                self.task["message"] = ""  # sorting is a convenience; the files are all still there
         with self._lock:
             if self._cancel:
                 self.task["state"] = "cancelled"

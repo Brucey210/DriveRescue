@@ -129,6 +129,18 @@ class ActionTests(AppCase):
         self.sys.free_bytes = lambda path: 10 ** 12
         self.app._check_room(rec, [{"volume": "0", "rel": "d"}], None)
 
+    def test_the_plan_comes_with_a_checklist_and_the_read_test_works(self):
+        plan = self.call("POST", "plan", {"source": self.src, "dest": self.dst, "folder": "DR"})
+        self.assertTrue(plan["ok"])
+        self.assertTrue(all(i["ok"] for i in plan["checklist"]), plan["checklist"])
+        self.sys.power_state = {"on_battery": True, "percent": 20}
+        plan = self.call("POST", "plan", {"source": self.src, "dest": self.dst, "folder": "DR"})
+        self.assertTrue(any(not i["ok"] and "battery" in i["text"] for i in plan["checklist"]))
+        result = self.call("GET", "assess", query={"path": [self.src]})
+        self.assertEqual(result["rating"], "good")
+        with self.assertRaises(server.ApiError):
+            self.call("GET", "assess", query={"path": ["/dev/nothing"]})
+
     def test_recover_input_checks(self):
         with self.assertRaises(server.ApiError):
             self.call("POST", "recover/copy", {"items": []})

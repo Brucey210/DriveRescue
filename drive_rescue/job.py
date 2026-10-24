@@ -7,7 +7,7 @@ import threading
 import time
 from collections import deque
 
-from . import ddrescue, mapfile, partitions
+from . import ddrescue, mapfile, partitions, verify
 from . import drives as drives_mod
 from .util import human_duration, human_size, strip_ansi
 
@@ -44,6 +44,8 @@ class ImageJob:
         self.heat_interval = 120.0  # seconds between temperature checks
         self.watch_tick = 1.0
         self.pause_reason = ""
+        self.stage = ""
+        self.verify_result = None
         self._inhibit = None
         self._power = (0.0, {"on_battery": False, "percent": None})
         self._speeds = deque(maxlen=90)
@@ -138,6 +140,8 @@ class ImageJob:
                 self._signal()
             elif self.state in ("paused", "error"):
                 self.state = "stopped"
+            elif self.state == "finishing":
+                self._want = "stop"  # skips the final check
 
     def _signal(self):
         if self._proc and self._proc.poll() is None:
@@ -303,6 +307,25 @@ class ImageJob:
         return 0
 
     def _complete(self):
+        if self.opts.get("verify_sample", True):
+            try:
+                segments = self._read_map(fresh=True).segments
+                with self._lock:
+                    self.state = "finishing"
+                    self.stage = "verify"
+                    self.message = "Checking a sample of the copy against the drive…"
+                self.log("Checking a sample of the copy against the drive")
+                self.verify_result = verify.sample_check(
+                    self.plan["source"]["path"], self.plan["image"], segments,
+                    cancelled=lambda: self._want == "stop",
+                    progress=lambda i, n: setattr(self, "message",
+                                                  f"Checking a sample of the copy against the drive… {int(100 * i / n)}%"))
+                v = self.verify_result
+                self.log(f"Sample check: {v['checked']} pieces compared, {len(v['different'])} different, "
+                         f"{v['unreadable']} could not be read again")
+            except Exception as exc:  # the copy is fine; the check is a bonus
+                self.log(f"Sample check could not run: {exc}")
+        self.stage = ""
         self._finish("done", "")
 
     def _run_pass(self, key, area=None):
@@ -489,6 +512,8 @@ class ImageJob:
                            "struggling. Keep going, but don't move or knock it.") if slow else "",
             "quick_done": (("quick" in keys and keys.index("quick") < self.phase_index) or self.state == "done"),
             "pause_reason": self.pause_reason,
+            "stage": self.stage if self.state == "finishing" else "",
+            "verify": self.verify_result,
             "outlook": (mapfile.outlook(mf, self.size) if (("quick" in keys and keys.index("quick") < self.phase_index) or self.state == "done") else None),
             "cells": mapfile.build_cells(mf, self.size, self.cells),
             "phases": phases,
