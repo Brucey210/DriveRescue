@@ -104,6 +104,15 @@ class ActionTests(AppCase):
         with self.assertRaises(server.ApiError):
             self.call("GET", "recover/list", query={"volume": ["0"]})
 
+    def test_the_session_log_records_what_happened_and_goes_in_the_report(self):
+        self.call("POST", "start", {"source": self.src, "dest": self.dst, "folder": "DR"})
+        s = self.wait_done()
+        text = self.call("GET", "log")["text"]
+        self.assertIn("Rescue copy confirmed", text)
+        self.assertIn("Now done", text)
+        self.assertIn("SESSION LOG", self.call("GET", "report")["text"])
+        self.assertTrue(os.path.exists(os.path.join(os.path.dirname(s["image"]), "DriveRescue-session.log")))
+
     def test_recover_input_checks(self):
         with self.assertRaises(server.ApiError):
             self.call("POST", "recover/copy", {"items": []})

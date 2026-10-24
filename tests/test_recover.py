@@ -307,3 +307,98 @@ class DamageCheckTests(unittest.TestCase):
             self.assertFalse(os.path.exists(dst))
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
+
+
+class ProtectedSectionTests(unittest.TestCase):
+    """BitLocker and LUKS sections are listed as locked, and open with the right password."""
+
+    def make(self, tmp, kind="BitLocker"):
+        calls = []
+
+        class Sys(System):
+            def attach_image(self, image):
+                return "/dev/loop9", ""
+
+            def detach_image(self, loop):
+                calls.append(("detach", loop))
+
+            def lsblk(self):
+                return [{"path": "/dev/loop9", "name": "loop9", "children": [
+                    {"path": "/dev/loop9p1", "name": "loop9p1", "type": "part", "fstype": kind, "label": "",
+                     "size": 4096}]}]
+
+            def probe(self, path):
+                return {"TYPE": "ntfs", "LABEL": "Work"} if path.startswith("/dev/mapper/") else {}
+
+            def mount(self, device, mountpoint, fstype=None, read_only=False):
+                calls.append(("mount", device, fstype))
+                os.makedirs(mountpoint, exist_ok=True)
+                return True, ""
+
+            def umount(self, mountpoint):
+                return True, ""
+
+            def crypt_open(self, device, name, password, kind_):
+                calls.append(("crypt_open", device, kind_))
+                if password != "s3cret":
+                    return None, "That password didn't work. Check it and try again."
+                return "/dev/mapper/" + name, ""
+
+            def crypt_close(self, name):
+                calls.append(("crypt_close", name))
+        return Sys(), calls
+
+    def test_a_protected_section_is_listed_then_opens_with_the_password(self):
+        tmp = tempfile.mkdtemp()
+        old, recover.MOUNT_ROOT = recover.MOUNT_ROOT, os.path.join(tmp, "mnt")
+        try:
+            sysm, calls = self.make(tmp)
+            rec = recover.Recovery(sysm, "x.img", tmp)
+            info = rec.open()
+            self.assertFalse(info["readable"])
+            self.assertEqual([(x["kind"], x["id"]) for x in info["locked"]], [("BitLocker", "0")])
+            self.assertNotIn("device", info["locked"][0])
+            with self.assertRaises(recover.RecoverError) as cm:
+                rec.unlock("0", "wrong")
+            self.assertIn("didn't work", str(cm.exception))
+            self.assertFalse(rec.volumes)
+            info = rec.unlock("0", "s3cret")
+            self.assertTrue(info["readable"])
+            self.assertEqual(info["locked"], [])
+            self.assertEqual(info["volumes"][0]["name"], "Work")
+            self.assertIn(("mount", "/dev/mapper/dr-crypt-%d-0" % os.getpid(), "ntfs"), calls)
+            rec.close()
+            self.assertIn(("crypt_close", "dr-crypt-%d-0" % os.getpid()), calls)
+        finally:
+            recover.MOUNT_ROOT = old
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_luks_is_recognised_and_an_empty_password_is_refused(self):
+        tmp = tempfile.mkdtemp()
+        old, recover.MOUNT_ROOT = recover.MOUNT_ROOT, os.path.join(tmp, "mnt")
+        try:
+            sysm, _calls = self.make(tmp, "crypto_LUKS")
+            rec = recover.Recovery(sysm, "x.img", tmp)
+            self.assertEqual(rec.open()["locked"][0]["kind"], "LUKS")
+            with self.assertRaises(recover.RecoverError):
+                rec.unlock("0", "")
+            with self.assertRaises(recover.RecoverError):
+                rec.unlock("9", "s3cret")
+        finally:
+            recover.MOUNT_ROOT = old
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_the_password_never_goes_on_the_command_line(self):
+        seen = {}
+
+        class Spy(System):
+            def run(self, cmd, timeout=30, input_text=None):
+                seen["cmd"], seen["input"] = cmd, input_text
+                return 2, "", "No key available with this passphrase."
+        path, err = Spy().crypt_open("/dev/x", "n", "hunter2", "BitLocker")
+        self.assertIsNone(path)
+        self.assertIn("didn't work", err)
+        self.assertNotIn("hunter2", " ".join(seen["cmd"]))
+        self.assertEqual(seen["input"], "hunter2")
+        self.assertIn("bitlk", seen["cmd"])
+        self.assertIn("--readonly", seen["cmd"])

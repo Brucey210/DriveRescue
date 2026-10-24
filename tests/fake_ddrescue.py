@@ -84,7 +84,7 @@ def fmt(n):
 
 
 def main():
-    args, positional, flags = sys.argv[1:], [], set()
+    args, positional, flags, opts_v = sys.argv[1:], [], set(), {}
     if "--help" in args:
         sys.stdout.write("Usage: ddrescue [options] infile outfile [mapfile]\n  -b, --sector-size=<bytes>\n"
                          "  -n, --no-scrape\n      --no-trim   skip the trimming phase\n"
@@ -92,8 +92,10 @@ def main():
         return
     i = 0
     while i < len(args):
-        if args[i] in ("-c", "-r", "-T", "-b"):
+        if args[i] in ("-c", "-r", "-T", "-b", "-i", "-s"):
             flags.add(args[i])
+            if args[i] in ("-i", "-s"):
+                opts_v[args[i]] = int(args[i + 1])
             i += 2
         elif args[i].startswith("-"):
             flags.add(args[i])
@@ -123,10 +125,12 @@ def main():
         os.truncate(dst, size)  # preallocate, like ddrescue -p
     last_save, start = time.time(), time.time()
     with open(src, "rb") as fin, open(dst, "r+b" if os.path.exists(dst) else "w+b") as fout:
+        lo_b = opts_v.get("-i", 0) // BLOCK
+        hi_b = nblocks if "-s" not in opts_v else min(nblocks, -(-(opts_v.get("-i", 0) + opts_v["-s"]) // BLOCK))
         for b in order:
             if interrupted:
                 break
-            if states[b] not in wanted:
+            if states[b] not in wanted or b < lo_b or b >= hi_b:
                 continue
             time.sleep(delay)
             if hits(bad, b):

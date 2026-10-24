@@ -54,6 +54,15 @@ class FakeSystem(System):
         self.calls.append(("dm_create", name, table))
         return "/dev/mapper/" + name, ""
 
+    def crypt_open(self, device, name, password, kind):
+        self.calls.append(("crypt_open", device, name, kind))
+        if password != getattr(self, "crypt_password", "right"):
+            return None, "That password didn't work. Check it and try again."
+        return "/dev/mapper/" + name, ""
+
+    def crypt_close(self, name):
+        self.calls.append(("crypt_close", name))
+
     def dm_remove(self, name):
         self.calls.append(("dm_remove", name))
 

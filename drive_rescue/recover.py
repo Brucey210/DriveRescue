@@ -30,6 +30,9 @@ class RecoverError(Exception):
     pass
 
 
+LOCKED_TYPES = {"crypto_LUKS": "LUKS", "BitLocker": "BitLocker", "bitlocker": "BitLocker"}
+
+
 FILE_TYPES = {
     "photo": {"jpg", "jpeg", "png", "gif", "webp", "bmp", "heic", "heif", "tif", "tiff", "raw", "cr2", "cr3", "nef",
               "arw", "dng", "orf", "rw2"},
@@ -149,6 +152,8 @@ class Recovery:
         self.out_dir = out_dir
         self.mapfile = mapfile
         self._dm = []
+        self._crypt = []
+        self.locked = []
         self.loop = None
         self.volumes = []
         self._mounts = []
@@ -177,75 +182,123 @@ class Recovery:
                 # lsblk only knows filesystem types while udev is running; blkid reads them directly
                 found = self.system.probe(part.get("path") or loop)
                 fstype, label = found.get("TYPE"), label or found.get("LABEL")
-            if not fstype or fstype in ("swap", "LVM2_member", "crypto_LUKS"):
+            if fstype in LOCKED_TYPES:
+                device, checked, damaged, dm_name = self._checked_device(part, i)
+                self.locked.append({"id": str(len(self.locked)), "name": label or part.get("name") or f"Section {i + 1}",
+                                    "kind": LOCKED_TYPES[fstype], "size_text": human_size(part.get("size") or 0),
+                                    "device": device, "index": i, "dm": dm_name, "damaged": damaged, "checked": checked})
+                continue
+            if not fstype or fstype in ("swap", "LVM2_member"):
                 continue
             existing = _mountpoints(part)
-            checked, damaged = None, 0
             if existing:
-                mp = existing[0]
-            else:
-                mp = os.path.join(MOUNT_ROOT, "image-%d" % i)
-                device, checked, damaged = self._checked_device(part, i)
-                ok, _msg = self.system.mount(device, mp, fstype, read_only=True)
-                if not ok and device != part["path"]:
-                    self._drop_dm()  # could not open it with the damage check; open it plainly
-                    device, checked, damaged = part["path"], False, 0
-                    ok, _msg = self.system.mount(device, mp, fstype, read_only=True)
-                if not ok:
-                    continue
-                self._mounts.append(mp)
-            self.volumes.append({
-                "id": str(len(self.volumes)),
-                "name": (label or part.get("name") or f"Volume {i + 1}"),
-                "fstype": fstype,
-                "size_text": human_size(part.get("size") or 0),
-                "mountpoint": mp,
-                "damage_check": checked,
-                "damaged_bytes": damaged,
-            })
+                self._add_volume(part, fstype, label, i, existing[0], None, 0)
+                continue
+            device, checked, damaged, dm_name = self._checked_device(part, i)
+            mp = os.path.join(MOUNT_ROOT, "image-%d" % i)
+            ok, _msg = self.system.mount(device, mp, fstype, read_only=True)
+            if not ok and dm_name:
+                self._drop_dm(dm_name)  # could not open it with the damage check; open it plainly
+                checked, damaged = False, 0
+                ok, _msg = self.system.mount(part["path"], mp, fstype, read_only=True)
+            if not ok:
+                continue
+            self._mounts.append(mp)
+            self._add_volume(part, fstype, label, i, mp, checked, damaged)
+        return self.describe()
+
+    def _add_volume(self, part, fstype, label, index, mountpoint, checked, damaged, size=None):
+        self.volumes.append({
+            "id": str(len(self.volumes)),
+            "name": (label or part.get("name") or f"Volume {index + 1}"),
+            "fstype": fstype,
+            "size_text": human_size(size if size is not None else part.get("size") or 0),
+            "mountpoint": mountpoint,
+            "damage_check": checked,
+            "damaged_bytes": damaged,
+        })
+
+    def unlock(self, locked_id, password):
+        """Open a protected (BitLocker or LUKS) section with its password, read-only. The password goes
+        straight to the unlocking tool and is never stored or logged."""
+        item = next((x for x in self.locked if x["id"] == str(locked_id)), None)
+        if item is None:
+            raise RecoverError("That section is not locked.")
+        if not password:
+            raise RecoverError("Type the password first.")
+        name = f"dr-crypt-{os.getpid()}-{item['index']}"
+        dev, err = self.system.crypt_open(item["device"], name, password, item["kind"])
+        if not dev:
+            raise RecoverError(err or "That password didn't work.")
+        self._crypt.append(name)
+        found = self.system.probe(dev)
+        fstype, label = found.get("TYPE"), found.get("LABEL")
+        if not fstype or fstype in LOCKED_TYPES:
+            self._drop_crypt(name)
+            raise RecoverError("The section opened, but nothing readable was inside it.")
+        mp = os.path.join(MOUNT_ROOT, "image-crypt-%d" % item["index"])
+        ok, _msg = self.system.mount(dev, mp, fstype, read_only=True)
+        if not ok:
+            self._drop_crypt(name)
+            raise RecoverError("The password worked, but the files inside could not be opened.")
+        self._mounts.append(mp)
+        self._add_volume({"name": item["name"]}, fstype, label or item["name"], item["index"], mp,
+                         item["checked"], item["damaged"], size=0)
+        self.volumes[-1]["size_text"] = item["size_text"]
+        self.locked = [x for x in self.locked if x is not item]
         return self.describe()
 
     def _checked_device(self, part, index):
         """The device to open for this partition. When parts of the copy were never recovered it is a
         virtual disk where those parts give read errors, so damaged files are noticed instead of
-        coming out with blanks in them. Returns (device, checked, bytes not recovered); checked is
-        None when there was nothing to check, True when it works, False when it could not be done."""
+        coming out with blanks in them. Returns (device, checked, bytes not recovered, virtual disk name);
+        checked is None when there was nothing to check, True when it works, False when it could not be done."""
         if not self.mapfile or not os.path.exists(self.mapfile):
-            return part["path"], None, 0
+            return part["path"], None, 0, None
         try:
             with open(self.mapfile) as fh:
                 mf = mapfile_mod.parse_mapfile(fh.read())
         except OSError:
-            return part["path"], False, 0
+            return part["path"], False, 0, None
         start = self.system.partition_offset(part["path"]) if part["path"] != self.loop else 0
         size = part.get("size") or 0
         if not size or not mf.segments:
-            return part["path"], False, 0
+            return part["path"], False, 0, None
         table, bad = damage_table(mf.segments, start, size, part["path"])
         if bad == 0:
-            return part["path"], True, 0
+            return part["path"], True, 0, None
         name = f"dr-image-{os.getpid()}-{index}"
         dev, _err = self.system.dm_create(name, table)
         if not dev:
-            return part["path"], False, 0
+            return part["path"], False, 0, None
         self._dm.append(name)
-        return dev, True, bad
+        return dev, True, bad, name
 
-    def _drop_dm(self):
-        for name in reversed(self._dm):
-            self.system.dm_remove(name)
-        self._dm = []
+    def _drop_dm(self, only=None):
+        for name in reversed(list(self._dm)):
+            if only is None or name == only:
+                self.system.dm_remove(name)
+                self._dm.remove(name)
+
+    def _drop_crypt(self, only=None):
+        for name in reversed(list(self._crypt)):
+            if only is None or name == only:
+                self.system.crypt_close(name)
+                self._crypt.remove(name)
 
     def describe(self):
         return {"volumes": [{k: v for k, v in vol.items() if k != "mountpoint"} for vol in self.volumes],
                 "readable": bool(self.volumes),
-                "unchecked": any(v.get("damage_check") is False for v in self.volumes)}
+                "unchecked": any(v.get("damage_check") is False for v in self.volumes),
+                "locked": [{k: x[k] for k in ("id", "name", "kind", "size_text")} for x in self.locked]}
 
     def close(self):
         for mp in reversed(self._mounts):
             self.system.umount(mp)
         self._mounts = []
+        self._drop_crypt()
         self._drop_dm()
+        self.locked = []
         if self.loop:
             self.system.detach_image(self.loop)
         self.loop, self.volumes = None, []

@@ -135,3 +135,13 @@ def check_health(system, path):
     if warn:
         return {"status": "warning", "label": "Worn", "details": details}
     return {"status": "healthy", "label": "Healthy", "details": details}
+
+
+def drive_temperature(system, path):
+    """The drive's own temperature in degrees, or None when it doesn't report one."""
+    try:
+        data = system.smartctl_json(path) or {}
+    except Exception:
+        return None
+    temp = (data.get("temperature") or {}).get("current")
+    return temp if isinstance(temp, (int, float)) else None

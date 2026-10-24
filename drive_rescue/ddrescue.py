@@ -34,9 +34,12 @@ def build_command(binary, source, image, mapfile, phase, opts, sector=512):
     cmd += STYLES.get(opts.get("style", "gentle"), STYLES["gentle"])
     if opts.get("reopen"):
         cmd += ["--reopen-on-error"]  # a USB drive that wedges after an error gets a fresh connection
-    if phase == "quick":
+    if phase in ("quick", "meta"):
         cmd += ["-n"]
-        if opts.get("min_read_rate"):
+        if phase == "meta" and opts.get("area"):
+            pos, length = opts["area"]
+            cmd += ["-i", str(int(pos)), "-s", str(int(length))]  # only this stretch of the drive
+        if opts.get("min_read_rate") and phase == "quick":
             # Where the drive crawls, move on and come back later: the good parts are saved first
             # and a weak area can't eat hours. The retry pass covers whatever was skipped.
             cmd += [f"--min-read-rate={SLOW_AREA_RATE}"]  # no scraping: skip trouble spots for now

@@ -390,5 +390,122 @@ class JobTests(unittest.TestCase):
             self.assertEqual(a.read(), b.read(os.path.getsize(self.sysm.source_file)))
 
 
+class VerifyAndBootTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def two(self, a, b):
+        pa, pb = os.path.join(self.tmp, "a"), os.path.join(self.tmp, "b")
+        open(pa, "wb").write(a)
+        open(pb, "wb").write(b)
+        return pa, pb
+
+    def test_identical_copy_checks_out_and_a_flipped_byte_is_found(self):
+        data = os.urandom(300_000)
+        a, b = self.two(data, data + b"extra room")
+        self.assertEqual(clone.verify_copy(a, b, len(data), chunk=65536), ("ok", None))
+        bad = bytearray(data)
+        bad[123_456] ^= 1
+        a, b = self.two(data, bytes(bad))
+        self.assertEqual(clone.verify_copy(a, b, len(data), chunk=65536), ("different", 123_456))
+
+    def test_a_short_copy_is_a_difference_and_a_cancel_stops_the_check(self):
+        data = os.urandom(100_000)
+        a, b = self.two(data, data[:60_000])
+        self.assertEqual(clone.verify_copy(a, b, len(data), chunk=30_000)[0], "different")
+        a, b = self.two(data, data)
+        self.assertEqual(clone.verify_copy(a, b, len(data), cancelled=lambda: True), ("cancelled", None))
+
+    def test_progress_is_reported(self):
+        seen = []
+        a, b = self.two(b"x" * 100, b"x" * 100)
+        clone.verify_copy(a, b, 100, progress=seen.append, chunk=40)
+        self.assertEqual(seen, [40, 80, 100])
+
+    def esp_system(self, files):
+        tmp = self.tmp
+
+        class Sys(FakeSystem):
+            def attach_region(self, path, offset, size):
+                return "/dev/loop-esp", ""
+
+            def detach_image(self, loop):
+                pass
+
+            def mount(self, device, mountpoint, fstype=None, read_only=False):
+                for rel in files:
+                    full = os.path.join(mountpoint, rel)
+                    os.makedirs(os.path.dirname(full), exist_ok=True)
+                    open(full, "wb").write(b"BOOT:" + rel.encode())
+                return True, ""
+
+            def umount(self, mountpoint):
+                return True, ""
+
+            def run(self, cmd, timeout=30, input_text=None):
+                return 0, "", ""
+        return Sys()
+
+    def layout(self):
+        return {"kind": "gpt", "sector": 512, "parts": [{"slot": 0, "start": 2048, "end": 4095, "type": ESP, "name": "EFI"}]}
+
+    def test_the_standard_startup_file_is_added_when_it_is_missing(self):
+        sysm = self.esp_system(["EFI/Microsoft/Boot/bootmgfw.efi", "EFI/Microsoft/Boot/BCD"])
+        work = os.path.join(self.tmp, "w")
+        note = clone.ensure_uefi_fallback(sysm, "dest", self.layout(), work)
+        self.assertIn("standard start-up file", note)
+        self.assertEqual(open(os.path.join(work, "esp", "EFI", "BOOT", "BOOTX64.EFI"), "rb").read(),
+                         b"BOOT:EFI/Microsoft/Boot/bootmgfw.efi")
+
+    def test_nothing_is_changed_when_the_standard_file_is_already_there(self):
+        sysm = self.esp_system(["EFI/Microsoft/Boot/bootmgfw.efi", "EFI/Boot/bootx64.efi"])
+        self.assertEqual(clone.ensure_uefi_fallback(sysm, "dest", self.layout(), os.path.join(self.tmp, "w")), "")
+
+    def test_no_system_partition_means_nothing_to_do(self):
+        sysm = self.esp_system([])
+        lay = {"kind": "gpt", "sector": 512, "parts": [{"slot": 0, "start": 2048, "end": 4095, "type": DATA, "name": "x"}]}
+        self.assertEqual(clone.ensure_uefi_fallback(sysm, "dest", lay, os.path.join(self.tmp, "w")), "")
+        self.assertEqual(clone.ensure_uefi_fallback(sysm, "dest", {"kind": "none"}, self.tmp), "")
+
+
+class VerifyInTheJobTests(JobTests):
+    def test_a_good_clone_reports_that_it_was_checked(self):
+        plan = clone.make_clone_plan(self.sysm, self.sysm.source_file, self.sysm.dest_file)
+        job = self.run_job(plan)
+        res = job.snapshot()["result"]
+        self.assertTrue(res["verified"])
+        self.assertTrue(any("matches exactly" in l for l in res["lines"]), res)
+
+    def test_a_clone_that_does_not_match_is_not_resized(self):
+        plan = clone.make_clone_plan(self.sysm, self.sysm.source_file, self.sysm.dest_file)
+        real = clone.verify_copy
+        clone.verify_copy = lambda *a, **k: ("different", 5 * MIB)
+        try:
+            job = self.run_job(plan)
+        finally:
+            clone.verify_copy = real
+        res = job.snapshot()["result"]
+        self.assertFalse(res["ok"])
+        self.assertIn("does not match", res["warnings"][0])
+
+    def test_checking_can_be_turned_off(self):
+        plan = clone.make_clone_plan(self.sysm, self.sysm.source_file, self.sysm.dest_file)
+        real = clone.verify_copy
+        clone.verify_copy = lambda *a, **k: self.fail("should not be called")
+        try:
+            job = clone.CloneJob(self.sysm, plan, {"verify": False})
+            job.start()
+            end = time.time() + 60
+            while time.time() < end and job.state not in ("done", "error", "stopped"):
+                time.sleep(0.1)
+        finally:
+            clone.verify_copy = real
+        self.assertEqual(job.state, "done")
+        self.assertIsNone(job.snapshot()["result"]["verified"])
+
+
 if __name__ == "__main__":
     unittest.main()

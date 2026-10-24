@@ -22,6 +22,7 @@ from . import plan as plan_mod
 from .job import ImageJob, JobError
 from . import images as images_mod
 from .recover import RecoverError, Recovery
+from .sessionlog import SessionLog
 from .system import System
 from .util import human_size
 
@@ -85,6 +86,8 @@ class App:
     def __init__(self, system=None):
         self.system = system or System()
         self.token = secrets.token_urlsafe(16)
+        self.log = SessionLog()
+        self.log.log("Drive Rescue started")
         self.job = None
         self.plan = None
         self.recovery = None
@@ -100,13 +103,13 @@ class App:
             ("POST", "clone/plan"): self.clone_plan, ("POST", "clone/start"): self.clone_start,
             ("POST", "plan"): self.make_plan, ("POST", "start"): self.start,
             ("POST", "network/connect"): self.network_connect, ("POST", "network/disconnect"): self.network_disconnect,
-            ("GET", "report"): self.report, ("GET", "recover/preview"): self.recover_preview,
+            ("GET", "report"): self.report, ("GET", "log"): self.session_log, ("GET", "recover/preview"): self.recover_preview,
             ("GET", "status"): self.status, ("POST", "pause"): self.pause,
             ("POST", "resume"): self.resume, ("POST", "stop"): self.stop,
             ("POST", "recover/open"): self.recover_open, ("GET", "recover/list"): self.recover_list,
             ("POST", "recover/copy"): self.recover_copy, ("POST", "recover/carve"): self.recover_carve,
             ("GET", "recover/status"): self.recover_status, ("POST", "recover/cancel"): self.recover_cancel,
-            ("POST", "recover/close"): self.recover_close,
+            ("POST", "recover/close"): self.recover_close, ("POST", "recover/unlock"): self.recover_unlock,
             ("GET", "image/find"): self.image_find, ("POST", "image/open"): self.image_open,
             ("GET", "recover/search"): self.recover_search, ("GET", "recover/thumb"): self.recover_thumb,
         }
@@ -178,6 +181,7 @@ class App:
                 free = human_size(self.system.free_bytes(mp))
             except OSError:
                 free = ""
+            self.log.log(f"Connected to a network folder ({kind}) {label}")
             return {"ok": True, "label": label, "free_text": free}
 
     def _drop_network(self):
@@ -212,6 +216,7 @@ class App:
             if self.recovery and self.recovery.task.get("state") == "running":
                 raise ApiError("Files are still being recovered. Wait for that to finish or cancel it.", 409)
             self.shutdown()
+        self.log.log(f"Computer: {action}")
         ok, err = self.system.power(action)
         if not ok:
             raise ApiError(f"The computer did not respond: {err}", 500)
@@ -266,7 +271,8 @@ class App:
             if self.recovery:
                 self.recovery.close()
                 self.recovery = None
-            job = clone_mod.CloneJob(self.system, result, clone_mod.clean_clone_opts(b.get("opts")))
+            job = clone_mod.CloneJob(self.system, result, clone_mod.clean_clone_opts(b.get("opts")), log=self.log.log)
+            self.log.log(f"Clone confirmed: {result['source']['name']} -> {result['dest_drive']['name']}")
             job.start()
             self.job, self.plan = job, result
             return self._clone_summary(result)
@@ -284,8 +290,12 @@ class App:
             if self.recovery:
                 self.recovery.close()
                 self.recovery = None
-            job = ImageJob(self.system, result, opts)
+            job = ImageJob(self.system, result, opts, log=self.log.log)
+            self.log.log(f"Rescue copy confirmed: {result['source']['name']} ({result['source']['size_text']}) "
+                         f"-> {result['image']}; options {opts}")
             job.start()
+            if result.get("target_dir"):
+                self.log.add_path(os.path.join(result["target_dir"], "DriveRescue-session.log"))
             self.job, self.plan = job, result
             return plan_summary(result)
 
@@ -340,6 +350,8 @@ class App:
             if not self.recovery:
                 self.recovery = Recovery(self.system, self.plan["image"], self.plan["target_dir"], self.plan.get("mapfile"))
             info = self.recovery.open()
+            self.log.log(f"Opened the copy {os.path.basename(self.plan['image'])}: "
+                         f"{len(info['volumes'])} readable section(s)")
             info["browsing"] = browsing
             info["image_name"] = os.path.basename(self.plan["image"])
             info["out_dir"] = "" if browsing else os.path.join(self.plan["target_dir"], "recovered")
@@ -355,12 +367,16 @@ class App:
         clean = [{"volume": str(i.get("volume", "")), "rel": str(i.get("rel", ""))}
                  for i in items if isinstance(i, dict)]
         rec = self._recovery()
-        rec.start_copy(clean, self._recover_dest(b.get("dest")))
+        dest = self._recover_dest(b.get("dest"))
+        self.log.log(f"Recovering {len(clean)} item(s) to {dest or 'the default folder'}")
+        rec.start_copy(clean, dest)
         return rec.status()
 
     def recover_carve(self, q, b):
         rec = self._recovery()
-        rec.start_carve(self._recover_dest(b.get("dest")))
+        dest = self._recover_dest(b.get("dest"))
+        self.log.log(f"Scanning for files, saving to {dest or 'the default folder'}")
+        rec.start_carve(dest)
         return rec.status()
 
     def _recover_dest(self, dest):
@@ -476,6 +492,14 @@ class App:
             self.last_task = None
             return {"ok": True, "name": item["name"]}
 
+    def recover_unlock(self, q, b):
+        password = b.get("password")
+        if not isinstance(password, str) or len(password) > 500 or "\0" in password:
+            raise ApiError("That password can't be used.")
+        info = self._recovery().unlock(str(b.get("id", "")), password)
+        self.log.log("Opened a protected section of the copy")  # never the password
+        return info
+
     def recover_search(self, q, b):
         return self._recovery().search((q.get("volume") or [""])[0], (q.get("q") or [""])[0], (q.get("kind") or [""])[0])
 
@@ -504,7 +528,7 @@ class App:
     def report(self, q, b):
         if self.plan and self.plan.get("mode") == "image":
             task = self.recovery.status() if self.recovery else self.last_task
-            text = report_mod.build_image_report(self.plan, task)
+            text = self._with_log(report_mod.build_image_report(self.plan, task))
             path = os.path.splitext(self.plan["image"])[0] + ".recovery-report.txt"
             saved = ""
             try:
@@ -523,7 +547,7 @@ class App:
         except Exception:
             pass
         task = self.recovery.status() if self.recovery else self.last_task
-        text = report_mod.build_report(self.plan, snap, health, task)
+        text = self._with_log(report_mod.build_report(self.plan, snap, health, task))
         saved = ""
         if self.plan.get("mode") != "clone" and self.plan.get("image"):
             path = os.path.splitext(self.plan["image"])[0] + ".report.txt"
@@ -534,6 +558,13 @@ class App:
             except OSError:
                 pass
         return {"text": text, "filename": "DriveRescue-report.txt", "saved_to": saved}
+
+    def _with_log(self, text):
+        log = self.log.text()
+        return text + ("\nSESSION LOG\n" + log if log else "")
+
+    def session_log(self, q, b):
+        return {"text": self.log.text()}
 
     def shutdown(self):
         with self._lock:

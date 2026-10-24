@@ -7,11 +7,17 @@ import threading
 import time
 from collections import deque
 
-from . import ddrescue, mapfile
+from . import ddrescue, mapfile, partitions
+from . import drives as drives_mod
 from .util import human_duration, human_size, strip_ansi
 
 CELLS = 294
+META_MAX_AREA = 64 * 1024 * 1024
+META_MFT_AREA = 128 * 1024 * 1024
+META_TOTAL_CAP = 1024 * 1024 * 1024
+HOT_C = 60  # degrees: above this the drive is paused to cool
 PHASES = [
+    ("meta", "Key areas first", "Partition tables and file indexes"),
     ("quick", "Quick copy", "Grabbing everything that reads easily"),
     ("retry", "Gentle retry", "Going back for skipped areas, slowly"),
     ("reverse", "Backwards retry", "Reading what is left from the other end"),
@@ -24,13 +30,21 @@ class JobError(Exception):
 
 
 class ImageJob:
-    def __init__(self, system, plan, opts, binary=None, cells=CELLS, clock=time.time):
+    META_FIRST = True
+
+    def __init__(self, system, plan, opts, binary=None, cells=CELLS, clock=time.time, log=None):
         self.system = system
         self.plan = plan
         self.opts = {"style": "gentle", "retries": 3, "direction": "forward", **(opts or {})}
         self.binary = binary or system.which("ddrescue") or system.which("gddrescue")
         self.cells = cells
         self.clock = clock
+        self.log = log or (lambda message: None)
+        self.stall_limit = 600.0   # seconds without any progress before pausing
+        self.heat_interval = 120.0  # seconds between temperature checks
+        self.watch_tick = 1.0
+        self.pause_reason = ""
+        self._auto = None          # (reason, message) when the program pauses by itself
         self.size = plan["source"]["size"]
         self.state = "idle"  # idle running pausing paused done stopped error
         self.phase_index = 0
@@ -60,16 +74,42 @@ class ImageJob:
                 return
             if self.state in ("idle",):
                 self._prepare()
+            self.log("Copy started" + (f" ({self.plan['source'].get('model') or ''} {self.plan['source'].get('size_text') or ''})".rstrip()
+                                       if self.plan.get("source") else ""))
             self._begin_thread()
 
     def resume(self):
         with self._lock:
             if self.state in ("paused", "error", "stopped"):
+                self._verify_source()
+                self.log("Resumed")
                 self._begin_thread()
+
+    def _verify_source(self):
+        """Before carrying on from saved progress, make sure the drive is still the same one.
+        A different drive at the same place would be mixed into the copy and spoil it."""
+        want = [self.plan.get("source")]
+        if self.plan.get("dest_drive"):
+            want.append(self.plan["dest_drive"])
+        try:
+            current = {d["path"]: d for d in drives_mod.list_drives(self.system)}
+        except Exception:
+            return  # can't look; the copy itself will fail clearly if the drive is gone
+        for drive in want:
+            if not drive or not drive.get("path"):
+                continue
+            now = current.get(drive["path"])
+            if now is None:
+                raise JobError("The drive isn't connected any more. Plug it back in, wait a moment, and try again.")
+            same_serial = not drive.get("serial") or not now.get("serial") or drive["serial"] == now["serial"]
+            if now["size"] != drive["size"] or not same_serial:
+                raise JobError("The drive at that place is not the same one the copy started with, so carrying on "
+                               "would mix two drives together. Put the original drive back, or start a new copy.")
 
     def pause(self):
         with self._lock:
             if self.state == "running":
+                self.log("Paused by the person")
                 self._want = "pause"
                 self.state = "pausing"
                 self._signal()
@@ -77,6 +117,7 @@ class ImageJob:
     def stop(self):
         with self._lock:
             if self.state in ("running", "pausing"):
+                self.log("Stopped by the person")
                 self._want = "stop"
                 self.state = "pausing"
                 self._signal()
@@ -117,6 +158,8 @@ class ImageJob:
 
     def _begin_thread(self):
         self._want = None
+        self._auto = None
+        self.pause_reason = ""
         self._t0 = self.clock()
         self.state = "running"
         self.message = ""
@@ -125,7 +168,7 @@ class ImageJob:
 
     # ---- the worker ------------------------------------------------------
     def _phase_keys(self):
-        keys = ["quick"]
+        keys = ["meta", "quick"] if (self.META_FIRST and self.opts.get("meta_first", True)) else ["quick"]
         if int(self.opts.get("retries", 3)) > 0:
             keys.append("retry")
             if self.opts.get("thorough"):
@@ -140,9 +183,16 @@ class ImageJob:
                 if key in ("retry", "reverse") and self._summary()["skipped"] == 0:
                     self.phase_index += 1
                     continue
-                rc = self._run_pass(key)
+                self.log(f"Starting: {dict((k, t) for k, t, _n in PHASES).get(key, key)}")
+                rc = self._run_meta() if key == "meta" else self._run_pass(key)
+                if rc != 0 and not self._want and not os.path.exists(self.plan["source"]["path"]):
+                    self._want = "lost"  # it went away between two checks
                 if self._want == "pause":
-                    self._finish("paused", "Paused. Your progress is saved.")
+                    if self._auto:
+                        self.pause_reason, note = self._auto
+                        self._finish("paused", note)
+                    else:
+                        self._finish("paused", "Paused. Your progress is saved.")
                     return
                 if self._want == "stop":
                     self._finish("stopped", "Stopped. What was copied so far is kept.")
@@ -152,6 +202,7 @@ class ImageJob:
                                           "responding. Check the cable and power, then start the copy again from the "
                                           "first screen. It carries on from where it stopped; nothing is lost.")
                     return
+                self.log(f"ddrescue finished the pass with code {rc}")
                 if rc != 0:
                     tail = strip_ansi(self._tail).strip().splitlines()[-1:] or [""]
                     self._finish("error", f"The copy stopped unexpectedly (code {rc}). The drive may have stopped "
@@ -159,6 +210,8 @@ class ImageJob:
                                           f"{ddrescue.explain_exit(rc)} {tail[0][:160]}".replace("  ", " ").strip())
                     return
                 self.phase_index += 1
+                if key == "meta":
+                    continue
                 if (key == "quick" and self.opts.get("pause_after_quick") and self.phase_index < len(keys)
                         and self._summary()["skipped"] > 0):
                     self._finish("paused", "The quick copy is finished. Everything that reads easily is now safe in the "
@@ -169,21 +222,75 @@ class ImageJob:
         except Exception as exc:  # never let the thread die silently
             self._finish("error", f"Unexpected problem: {exc}")
 
-    def _command(self, key):
+    def _command(self, key, area=None):
         return ddrescue.build_command(self.binary, self.plan["source"]["path"], self.plan["image"],
-                                      self.plan["mapfile"], key, {**self.opts, **self.features},
+                                      self.plan["mapfile"], key, {**self.opts, **self.features, "area": area},
                                       sector=self.plan.get("sector", 512))
+
+    # ---- the key areas of the drive, copied before everything else
+    def _meta_areas(self):
+        """Stretches that hold the drive's own maps: the partition tables, the start of every partition
+        (boot records, allocation tables, the first folders) and the NTFS file index. If the drive dies
+        part way through, these are what make the rest of the copy readable."""
+        path, size = self.plan["source"]["path"], self.size
+        sector = self.plan.get("sector", 512) or 512
+        mib = 1024 * 1024
+        areas = [(0, min(mib, size)), (max(0, size - mib), min(mib, size))]
+        try:
+            layout = partitions.read_layout(path, sector)
+        except OSError:
+            layout = {"parts": []}
+        for p in layout.get("parts", []):
+            start, plen = p["start"] * sector, (p["end"] - p["start"] + 1) * sector
+            areas.append((start, min(META_MAX_AREA, plen)))
+            try:
+                boot = partitions._read(path, start, 512)
+            except OSError:
+                continue
+            if boot[3:11] == b"NTFS    " and len(boot) >= 56:
+                bps = int.from_bytes(boot[11:13], "little")
+                spc = boot[13]
+                mft = int.from_bytes(boot[48:56], "little") * bps * spc
+                if bps and spc and 0 < mft < plen:
+                    areas.append((start + mft, min(META_MFT_AREA, plen - mft)))
+        grain = max(4096, sector)
+        spans = []
+        for pos, length in sorted(areas):
+            lo = pos // grain * grain
+            hi = min(size, -(-(pos + length) // grain) * grain)
+            if spans and lo <= spans[-1][1]:
+                spans[-1][1] = max(spans[-1][1], hi)
+            else:
+                spans.append([lo, hi])
+        out, total = [], 0
+        for lo, hi in spans:
+            if hi <= lo:
+                continue
+            take = min(hi - lo, META_TOTAL_CAP - total)
+            if take <= 0:
+                break
+            out.append((lo, take))
+            total += take
+        return out
+
+    def _run_meta(self):
+        for area in self._meta_areas():
+            rc = self._run_pass("meta", area)
+            if self._want or rc != 0:
+                return rc
+        return 0
 
     def _complete(self):
         self._finish("done", "")
 
-    def _run_pass(self, key):
-        cmd = self._command(key)
+    def _run_pass(self, key, area=None):
+        cmd = self._command(key, area)
         self._tail = ""
         self._proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                       start_new_session=True)
         if self._want:  # Pause or Stop was pressed before the process existed; don't lose it
             self._signal()
+        threading.Thread(target=self._watch, args=(self._proc,), daemon=True).start()
         fd = self._proc.stdout.fileno()
         checked = time.monotonic()
         while True:
@@ -209,7 +316,45 @@ class ImageJob:
         self._map_cache = (0.0, None)  # the pass just wrote its final mapfile
         return code
 
+    def _watch(self, proc):
+        """Looks after the drive while a pass runs: pauses by itself when nothing has moved for a long
+        time, or when the drive gets too hot. Everything is saved, so the person can simply resume."""
+        last_progress, last_change = None, time.monotonic()
+        next_heat = time.monotonic() + self.heat_interval
+        while proc.poll() is None and not self._want:
+            time.sleep(self.watch_tick)
+            if proc.poll() is not None or self._want:
+                return
+            now = time.monotonic()
+            progress = (self._live.get("rescued"), self._live.get("errsize"), self._live.get("errors"))
+            if progress != last_progress:
+                last_progress, last_change = progress, now
+            elif now - last_change >= self.stall_limit:
+                minutes = max(1, int(self.stall_limit // 60))
+                self._auto_pause("stall", f"The drive stopped responding for about {minutes} "
+                                          f"{'minute' if minutes == 1 else 'minutes'}, so the copy paused to protect it. "
+                                          "Your progress is saved. Check the cable and power, then press Resume.")
+                return
+            if now >= next_heat:
+                next_heat = now + self.heat_interval
+                temp = drives_mod.drive_temperature(self.system, self.plan["source"]["path"])
+                if temp is not None and temp >= HOT_C:
+                    self._auto_pause("heat", f"The drive is hot ({temp} °C), so the copy paused to protect it. "
+                                             "Your progress is saved. Let it cool for ten minutes, then press Resume.")
+                    return
+
+    def _auto_pause(self, reason, message):
+        with self._lock:
+            if self._want or self.state != "running":
+                return
+            self.log(f"Paused automatically ({reason}): {message}")
+            self._auto = (reason, message)
+            self._want = "pause"
+            self.state = "pausing"
+            self._signal()
+
     def _finish(self, state, message):
+        self.log(f"Now {state}" + (f": {message}" if message else ""))
         self._map_cache = (0.0, None)
         if self._t0 is not None:
             self._elapsed += max(0.0, self.clock() - self._t0)
@@ -278,7 +423,7 @@ class ImageJob:
             else:
                 status = "waiting"
             phases.append({"key": key, "title": title, "note": note, "status": status})
-        pass_text = {"quick": "Pass 1 · Quick copy", "retry": "Pass 2 · Gentle retry", "reverse": "Pass 3 · Backwards retry"}.get(active, "")
+        pass_text = {"meta": "Pass 0 · Key areas", "quick": "Pass 1 · Quick copy", "retry": "Pass 2 · Gentle retry", "reverse": "Pass 3 · Backwards retry"}.get(active, "")
         return {
             "state": self.state,
             "message": self.message,
@@ -295,8 +440,9 @@ class ImageJob:
             "elapsed": int(elapsed),
             "speed_note": ("The drive has slowed right down. That is normal in damaged areas, and a sign it is "
                            "struggling. Keep going, but don't move or knock it.") if slow else "",
-            "quick_done": self.phase_index >= 1 or self.state == "done",
-            "outlook": (mapfile.outlook(mf, self.size) if (self.phase_index >= 1 or self.state == "done") else None),
+            "quick_done": (("quick" in keys and keys.index("quick") < self.phase_index) or self.state == "done"),
+            "pause_reason": self.pause_reason,
+            "outlook": (mapfile.outlook(mf, self.size) if (("quick" in keys and keys.index("quick") < self.phase_index) or self.state == "done") else None),
             "cells": mapfile.build_cells(mf, self.size, self.cells),
             "phases": phases,
             "image": self.plan["image"],

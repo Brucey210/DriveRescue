@@ -181,6 +181,25 @@ class System:
     def dm_remove(self, name):
         self.run(["dmsetup", "remove", "--retry", name], timeout=30)
 
+    def crypt_open(self, device, name, password, kind):
+        """Unlock a BitLocker or LUKS section read-only. The password is sent on standard input, never on
+        the command line. Returns (device path, "") or (None, a plain explanation)."""
+        cmd = ["cryptsetup", "open", "--readonly", "--key-file=-"]
+        if kind == "BitLocker":
+            cmd += ["--type", "bitlk"]
+        rc, _out, err = self.run(cmd + [device, name], timeout=120, input_text=password)
+        if rc == 127:
+            return None, "The tool that opens protected drives (cryptsetup) is not on this system."
+        if rc != 0:
+            low = (err or "").lower()
+            if "no key available" in low or rc == 2 or "passphrase" in low or "wrong" in low:
+                return None, "That password didn't work. Check it and try again."
+            return None, "This protected section could not be opened. " + (err.strip()[-120:] if err else "")
+        return "/dev/mapper/" + name, ""
+
+    def crypt_close(self, name):
+        self.run(["cryptsetup", "close", name], timeout=30)
+
     def detach_image(self, loop):
         self.run(["losetup", "-d", loop], timeout=30)
 

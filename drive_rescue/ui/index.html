@@ -665,7 +665,7 @@ function paintCopy(s) {
     return;
   }
   const clone = s.mode === "clone";
-  const titles = { running: clone ? "Cloning your drive" : "Copying your drive", pausing: "Pausing…", paused: "Paused", finishing: "Using the extra space",
+  const titles = { running: clone ? "Cloning your drive" : "Copying your drive", pausing: "Pausing…", paused: "Paused", finishing: s.stage === "verify" ? "Checking the copy" : "Using the extra space",
     done: clone ? "Clone finished" : "Copy finished", stopped: "Stopped", error: clone ? "The clone stopped" : "The copy stopped", idle: "Getting ready…" };
   $("#cTitle").textContent = titles[s.state] || "Copying your drive";
   let sub = clone ? "Keep the computer on and the drives plugged in. Don't unplug either drive until this finishes."
@@ -767,6 +767,25 @@ function imgPaint() {
 }
 
 // ----------------------------------------------------------------- step 4
+function lockedCard(r) {
+  const L = (r.info && r.info.locked) || [];
+  return L.map(x => `<div class="card"><h2>${esc(x.name)} is protected (${esc(x.kind)})</h2>
+    <p class="muted" style="margin:4px 0 10px">${esc(x.size_text)}. Type its password, or the long recovery key, to open it. It is only used to open the copy and is never saved.</p>
+    <div class="row2"><input type="password" id="pw-${esc(x.id)}" autocomplete="off" placeholder="Password or recovery key" style="flex:1;min-height:44px;padding:0 12px;border:1px solid var(--line2);border-radius:10px;background:var(--surface)">
+    ${btn("unlock", "Unlock", "primary", `data-id="${esc(x.id)}"`)}</div>
+    ${r.unlockError && r.unlockId === x.id ? `<div style="margin-top:10px">${banner("bad", esc(r.unlockError))}</div>` : ""}</div>`).join("");
+}
+async function unlockSection(id) {
+  const box = $("#pw-" + id), password = box ? box.value : "";
+  S.rec.unlockError = ""; S.rec.unlockId = id;
+  try {
+    const r = await api("recover/unlock", { id, password });
+    if (box) box.value = "";
+    S.rec.info = { ...S.rec.info, ...r };
+    if (!S.rec.vol && r.volumes[0]) { S.rec.vol = r.volumes[0].id; await loadDir(""); }
+  } catch (e) { S.rec.unlockError = e.message; }
+  recoverPaint();
+}
 const THUMB_EXT = /\.(jpe?g|png|gif|webp|bmp)$/i;
 const currentEntries = () => S.rec.results ? S.rec.results.entries : (S.rec.dir ? S.rec.dir.entries : []);
 function destBody() {
@@ -871,7 +890,9 @@ function recoverPaint() {
   let body = "";
   if (r.loading) body = `<div class="card muted">Opening the copy…</div>`;
   else if (r.error && !r.dir) body = banner("bad", esc(r.error)) + (r.info === null ? "" : "");
-  else if (r.info && !r.info.readable) {
+  else if (r.info && !r.info.readable && (r.info.locked || []).length) {
+    body = banner("plain", "This copy is protected with a password (BitLocker or similar). Type it below to open it, or scan the copy for files by type, which needs no password but can't read protected files.") + lockedCard(r) + destCard(r);
+  } else if (r.info && !r.info.readable) {
     body = banner("warn", "The folders inside the copy are too damaged to browse. You can still scan the copy for files by type, such as photos and documents. Names and folders won't be kept.") + destCard(r);
   } else if (r.dir) {
     const parts = r.dir.rel ? r.dir.rel.split("/") : [];
@@ -1067,6 +1088,7 @@ document.addEventListener("click", async ev => {
     else if (act === "backRecover") go(4);
     else if (act === "open") { S.rec.preview = null; await loadDir(rel); S.rec.sel = new Set(); recoverPaint(); }
     else if (act === "crumb") { S.rec.preview = null; await loadDir(rel); recoverPaint(); }
+    else if (act === "unlock") { el.disabled = true; try { await unlockSection(el.dataset.id); } finally { el.disabled = false; } }
     else if (act === "preview") {
       const name = rel.split("/").pop();
       S.rec.preview = { name, rel, loading: true }; recoverPaint();
