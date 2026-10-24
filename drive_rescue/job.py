@@ -14,6 +14,7 @@ CELLS = 294
 PHASES = [
     ("quick", "Quick copy", "Grabbing everything that reads easily"),
     ("retry", "Gentle retry", "Going back for skipped areas, slowly"),
+    ("reverse", "Backwards retry", "Reading what is left from the other end"),
     ("final", "Final check", "Making sure the copy is complete"),
 ]
 
@@ -127,6 +128,8 @@ class ImageJob:
         keys = ["quick"]
         if int(self.opts.get("retries", 3)) > 0:
             keys.append("retry")
+            if self.opts.get("thorough"):
+                keys.append("reverse")
         return keys
 
     def _run(self):
@@ -134,7 +137,7 @@ class ImageJob:
             keys = self._phase_keys()
             while self.phase_index < len(keys):
                 key = keys[self.phase_index]
-                if key == "retry" and self._summary()["skipped"] == 0:
+                if key in ("retry", "reverse") and self._summary()["skipped"] == 0:
                     self.phase_index += 1
                     continue
                 rc = self._run_pass(key)
@@ -265,6 +268,8 @@ class ImageJob:
                 if self.state == "done":
                     status = "done"
             elif key not in keys:
+                if key == "reverse":
+                    continue  # only shown when it was asked for
                 status = "skipped"
             elif self.state == "done" or keys.index(key) < self.phase_index:
                 status = "done"
@@ -273,7 +278,7 @@ class ImageJob:
             else:
                 status = "waiting"
             phases.append({"key": key, "title": title, "note": note, "status": status})
-        pass_text = {"quick": "Pass 1 · Quick copy", "retry": "Pass 2 · Gentle retry"}.get(active, "")
+        pass_text = {"quick": "Pass 1 · Quick copy", "retry": "Pass 2 · Gentle retry", "reverse": "Pass 3 · Backwards retry"}.get(active, "")
         return {
             "state": self.state,
             "message": self.message,

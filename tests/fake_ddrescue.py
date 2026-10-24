@@ -87,7 +87,8 @@ def main():
     args, positional, flags = sys.argv[1:], [], set()
     if "--help" in args:
         sys.stdout.write("Usage: ddrescue [options] infile outfile [mapfile]\n  -b, --sector-size=<bytes>\n"
-                         "  -n, --no-scrape\n      --no-trim   skip the trimming phase\n")
+                         "  -n, --no-scrape\n      --no-trim   skip the trimming phase\n"
+                         "  -a, --min-read-rate=<bytes>\n      --reopen-on-error\n  -M, --retrim\n")
         return
     i = 0
     while i < len(args):

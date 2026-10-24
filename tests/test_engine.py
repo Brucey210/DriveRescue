@@ -446,9 +446,11 @@ class JobTests(Base):
 
     def test_features_are_read_from_ddrescue_itself(self):
         ddrescue._FEATURES.clear()
-        self.assertEqual(ddrescue.detect_features(self.fs, SHIM), {"no_trim": True})
+        self.assertEqual(ddrescue.detect_features(self.fs, SHIM),
+                         {"no_trim": True, "min_read_rate": True, "reopen": True, "retrim": True})
         ddrescue._FEATURES.clear()
-        self.assertEqual(ddrescue.detect_features(self.fs, "/nonexistent/ddrescue"), {"no_trim": False})
+        self.assertEqual(ddrescue.detect_features(self.fs, "/nonexistent/ddrescue"),
+                         {"no_trim": False, "min_read_rate": False, "reopen": False, "retrim": False})
         ddrescue._FEATURES.clear()
 
     def test_the_job_uses_the_drives_sector_size_and_no_trim(self):
@@ -458,6 +460,34 @@ class JobTests(Base):
         cmd = job._command("quick")
         self.assertEqual(cmd[cmd.index("-b") + 1], "4096")
         self.assertIn("--no-trim", cmd)
+
+    def test_the_backwards_pass_runs_and_is_shown_when_asked_for(self):
+        job = self.job(thorough=True)
+        job.start()
+        self.assertEqual(wait_for(job, self.TERMINAL), "done")
+        snap = job.snapshot()
+        self.assertEqual([p["key"] for p in snap["phases"]], ["quick", "retry", "reverse", "final"])
+        self.assertTrue(all(p["status"] == "done" for p in snap["phases"]))
+        plain = self.job()
+        self.assertNotIn("reverse", [p["key"] for p in plain.snapshot()["phases"]])
+
+    def test_slow_areas_are_skipped_early_and_a_backwards_pass_is_optional(self):
+        feats = {"no_trim": True, "min_read_rate": True, "reopen": True, "retrim": True}
+        quick = ddrescue.build_command("d", "s", "i", "m", "quick", {"style": "fast", **feats})
+        self.assertIn("--min-read-rate=65536", quick)
+        self.assertIn("--reopen-on-error", quick)
+        rev = ddrescue.build_command("d", "s", "i", "m", "reverse", {"style": "fast", **feats})
+        self.assertIn("-R", rev)
+        self.assertIn("--retrim", rev)
+        self.assertNotIn("--min-read-rate=65536", rev)
+        back = ddrescue.build_command("d", "s", "i", "m", "reverse", {"style": "fast", "direction": "backward"})
+        self.assertNotIn("-R", back)  # the second look goes the other way round
+        plain = ddrescue.build_command("d", "s", "i", "m", "quick", {"style": "fast"})
+        self.assertFalse([a for a in plain if "min-read" in a or "reopen" in a])  # off unless supported
+        job = self.job()
+        self.assertEqual(job._phase_keys(), ["quick", "retry"])
+        job.opts["thorough"] = True
+        self.assertEqual(job._phase_keys(), ["quick", "retry", "reverse"])
 
     def test_a_drive_that_disappears_stops_the_copy_with_a_clear_message(self):
         os.environ["FAKE_DELAY"] = "0.05"

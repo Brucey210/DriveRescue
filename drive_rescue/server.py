@@ -50,7 +50,8 @@ def clean_opts(raw):
     return {"style": style if style in STYLES else "gentle",
             "retries": max(0, min(10, retries)),
             "direction": direction if direction in DIRECTIONS else "forward",
-            "pause_after_quick": raw.get("pause_after_quick") is True}
+            "pause_after_quick": raw.get("pause_after_quick") is True,
+            "thorough": raw.get("thorough") is True}
 
 
 def explain_network_error(err):

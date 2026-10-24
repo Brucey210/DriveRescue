@@ -232,6 +232,7 @@ try { S.sound = localStorage.getItem("dr-sound") !== "0"; } catch (e) { /* fine 
 const TIPS = {
   image: "An image file is an exact copy of the whole failing drive, saved as one big file on the healthy drive. Your files are then recovered from that copy, so the failing drive is read as little as possible.",
   style: "Gentle reads in small pieces, so a bad spot costs less of the drive. Fast is quicker, and suits a drive that is only slightly damaged.",
+  thorough: "After the retry passes, goes over what is still missing once more, from the other end of each damaged area. It can win back a little more data on a badly damaged drive, but takes extra time and puts more strain on it.",
   retries: "After the quick copy, the program goes back over the parts it skipped and tries again, slowly. More passes can win back more data, but take longer and put the drive under more strain.",
   priority: "A failing drive can get worse the longer it runs. With this on, the copy pauses once everything that reads easily is safe, so you can get your most important files out before the slow, harder part begins.",
   skipped: "Areas that are hard to read are skipped on the first pass, so the easy data is saved first. The program comes back to them later.",
@@ -386,6 +387,7 @@ function viewDrives() {
       <div class="fields">
         <label><span>Copy style ${tip("style")}</span><select id="optStyle"><option value="gentle">Gentle (recommended)</option><option value="fast">Fast</option></select></label>
         <label><span>Retry passes ${tip("retries")}</span><input id="optRetries" type="number" min="0" max="10"></label>
+        <label class="opt"><span><input type="checkbox" id="optThorough" ${S.opts.thorough ? "checked" : ""}> Also try reading backwards ${tip("thorough")}</span></label>
         <label>Folder on the healthy drive<input id="optFolder" type="text" maxlength="60"></label>
       </div>
     </details>`;
@@ -399,7 +401,7 @@ function viewDrives() {
 }
 function advHint() {
   const el = $("#advHint");
-  if (el) el.textContent = `${S.opts.style === "fast" ? "Fast" : "Gentle"} copy · ${S.opts.retries} retry passes · folder ${S.folder || "DriveRescue"}${S.opts.pause_after_quick ? " · pause after quick copy" : ""}`;
+  if (el) el.textContent = `${S.opts.style === "fast" ? "Fast" : "Gentle"} copy · ${S.opts.retries} retry passes · folder ${S.folder || "DriveRescue"}${S.opts.pause_after_quick ? " · pause after quick copy" : ""}${S.opts.thorough ? " · backwards retry" : ""}`;
 }
 function row(kind, value, checked, disabled, title, meta, tag) {
   return `<label class="drive ${checked ? "on" : ""} ${disabled ? "off" : ""}">
@@ -920,6 +922,7 @@ document.addEventListener("change", ev => {
   const t = ev.target;
   if (t.name === "source") { S.source = t.value; const d = S.drives.find(x => x.partitions.some(p => p.path === S.dest)); if (d && d.path === S.source) S.dest = ""; lists(); schedulePlan(); }
   else if (t.name === "dest") { S.dest = t.value; lists(); schedulePlan(); }
+  else if (t.id === "optThorough") { S.opts.thorough = t.checked; advHint(); schedulePlan(); }
   else if (t.id === "optPriority") { S.opts.pause_after_quick = t.checked; advHint(); schedulePlan(); }
   else if (t.id === "optSound") { S.sound = t.checked; try { localStorage.setItem("dr-sound", t.checked ? "1" : "0"); } catch (e) { /* fine */ } }
   else if (t.id === "optShut") { S.shutdownAfter = t.checked; if (!t.checked) cancelShutdown(); }
