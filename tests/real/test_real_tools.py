@@ -111,9 +111,10 @@ class RealDamagedDriveTests(unittest.TestCase):
             self.assertEqual(rec.task["state"], "done", rec.task)
             damaged = [os.path.basename(d["path"]) for d in rec.task["damaged"]]
             self.assertEqual(damaged, ["holiday-big.bin"], rec.task)
-            got = os.path.join(self.work, "recovered", vol["name"], "Pictures", "small.bin")
+            base = os.path.join(self.work, "recovered", "recovered", vol["name"])
+            got = os.path.join(base, "Pictures", "small.bin")
             self.assertEqual(open(got, "rb").read(), b"S" * (256 * 1024))
-            big = open(os.path.join(self.work, "recovered", vol["name"], "Pictures", "holiday-big.bin"), "rb").read()
+            big = open(os.path.join(base, "Pictures", "holiday-big.bin"), "rb").read()
             self.assertEqual(len(big), 8 * 1024 * 1024)
             self.assertEqual(big[:1024 * 1024], b"B" * 1024 * 1024)       # the readable start is intact
             self.assertIn(b"\0" * 4096, big)                              # the unreadable stretch is blank
