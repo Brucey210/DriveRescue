@@ -140,6 +140,10 @@ class System:
                 except OSError:
                     pass
 
+    def remount_rw(self, mountpoint):
+        rc, _out, err = self.run(["mount", "-o", "remount,rw", mountpoint], timeout=60)
+        return rc == 0, err.strip()
+
     def umount(self, mountpoint):
         rc, _out, err = self.run(["umount", mountpoint], timeout=60)
         return rc == 0, err.strip()

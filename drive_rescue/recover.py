@@ -30,6 +30,66 @@ class RecoverError(Exception):
     pass
 
 
+FILE_TYPES = {
+    "photo": {"jpg", "jpeg", "png", "gif", "webp", "bmp", "heic", "heif", "tif", "tiff", "raw", "cr2", "cr3", "nef",
+              "arw", "dng", "orf", "rw2"},
+    "document": {"doc", "docx", "xls", "xlsx", "ppt", "pptx", "pdf", "txt", "odt", "ods", "odp", "rtf", "md", "csv",
+                 "pages", "numbers", "key", "epub"},
+    "video": {"mp4", "mov", "avi", "mkv", "wmv", "m4v", "mpg", "mpeg", "3gp", "mts", "m2ts", "flv", "webm"},
+    "audio": {"mp3", "wav", "flac", "m4a", "aac", "ogg", "wma", "aiff", "opus"},
+    "archive": {"zip", "rar", "7z", "tar", "gz", "bz2", "xz", "iso"},
+}
+_EXT_TYPE = {ext: kind for kind, exts in FILE_TYPES.items() for ext in exts}
+THUMB_MAX = 1024 * 1024
+SEARCH_LIMIT = 500
+SEARCH_SECONDS = 10
+
+
+def file_type(name):
+    """photo, document, video, audio, archive, or "" for anything else."""
+    return _EXT_TYPE.get(os.path.splitext(name)[1].lower().lstrip("."), "")
+
+
+def exif_thumbnail(data):
+    """The small preview picture most camera and phone JPEGs carry inside themselves, or None.
+    Reading it needs only the first few KB of the file, so a folder of big photos stays quick."""
+    try:
+        if data[:2] != b"\xff\xd8":
+            return None
+        pos = 2
+        while pos + 4 <= len(data) and data[pos] == 0xFF:
+            marker, length = data[pos + 1], int.from_bytes(data[pos + 2:pos + 4], "big")
+            if marker == 0xE1 and data[pos + 4:pos + 10] == b"Exif\0\0":
+                tiff = data[pos + 10:pos + 2 + length]
+                end = "<" if tiff[:2] == b"II" else ">"
+                if tiff[:2] not in (b"II", b"MM"):
+                    return None
+                u16 = lambda o: int.from_bytes(tiff[o:o + 2], "little" if end == "<" else "big")
+                u32 = lambda o: int.from_bytes(tiff[o:o + 4], "little" if end == "<" else "big")
+                ifd0 = u32(4)
+                ifd1 = u32(ifd0 + 2 + 12 * u16(ifd0))  # the second directory describes the thumbnail
+                if not ifd1 or ifd1 + 2 > len(tiff):
+                    return None
+                start = size = None
+                for i in range(u16(ifd1)):
+                    entry = ifd1 + 2 + 12 * i
+                    tag = u16(entry)
+                    if tag == 0x0201:
+                        start = u32(entry + 8)
+                    elif tag == 0x0202:
+                        size = u32(entry + 8)
+                if start is None or not size or start + size > len(tiff):
+                    return None
+                thumb = tiff[start:start + size]
+                return thumb if thumb[:2] == b"\xff\xd8" else None
+            if marker in (0xDA, 0xD9):
+                return None
+            pos += 2 + length
+    except (IndexError, ValueError):
+        return None
+    return None
+
+
 SECTOR = 512
 SALVAGE_PIECE = 4096
 
@@ -210,6 +270,7 @@ class Recovery:
                     except OSError:
                         is_dir, size = False, 0
                     entries.append({"name": e.name, "is_dir": is_dir, "size": size, "size_text": human_size(size),
+                                    "type": "" if is_dir else file_type(e.name),
                                     "rel": (rel.strip("/") + "/" + e.name).lstrip("/")})
                     if len(entries) >= MAX_ENTRIES:
                         break
@@ -218,6 +279,85 @@ class Recovery:
                                f"This folder can't be read: {err.strerror}")
         entries.sort(key=lambda x: (not x["is_dir"], x["name"].lower()))
         return {"rel": rel.strip("/"), "entries": entries, "truncated": len(entries) >= MAX_ENTRIES}
+
+    # ---- finding files ---------------------------------------------------
+    def search(self, volume_id, query="", kind="", clock=None):
+        """Look through the whole volume for files by part of the name and/or by type.
+        Stops after a short while or enough results, and says so, rather than hanging on a damaged drive."""
+        import time
+        clock = clock or time.monotonic
+        vol = self._volume(volume_id)
+        root = vol["mountpoint"]
+        needle = (query or "").strip().lower()
+        if kind and kind not in FILE_TYPES:
+            raise RecoverError("Unknown kind of file.")
+        if not needle and not kind:
+            raise RecoverError("Type a name, or choose a kind of file.")
+        results, stack, truncated = [], [""], False
+        deadline = clock() + SEARCH_SECONDS
+        while stack and not truncated:
+            rel = stack.pop()
+            try:
+                it = os.scandir(os.path.join(root, rel) if rel else root)
+            except OSError:
+                continue
+            with it:
+                try:
+                    for e in it:
+                        if clock() > deadline or len(results) >= SEARCH_LIMIT:
+                            truncated = True
+                            break
+                        try:
+                            if e.is_symlink():
+                                continue
+                            is_dir = e.is_dir(follow_symlinks=False)
+                        except OSError:
+                            continue
+                        child = (rel + "/" + e.name) if rel else e.name
+                        if is_dir:
+                            stack.append(child)
+                            continue
+                        kind_of = file_type(e.name)
+                        if kind and kind_of != kind:
+                            continue
+                        if needle and needle not in e.name.lower():
+                            continue
+                        try:
+                            size = e.stat(follow_symlinks=False).st_size
+                        except OSError:
+                            size = 0
+                        results.append({"name": e.name, "is_dir": False, "size": size, "size_text": human_size(size),
+                                        "type": kind_of, "rel": child, "folder": rel})
+                except OSError:
+                    continue
+        results.sort(key=lambda x: (x["name"].lower(), x["rel"]))
+        return {"entries": results, "truncated": truncated, "query": query, "kind": kind}
+
+    def thumbnail(self, volume_id, rel):
+        """A small picture for the file list: the photo's own built-in preview, or the whole picture when
+        it is small. Returns {} when there is nothing cheap to show."""
+        vol = self._volume(volume_id)
+        path = safe_join(vol["mountpoint"], rel)
+        ext = os.path.splitext(path)[1].lower().lstrip(".")
+        if ext not in IMAGE_TYPES or os.path.islink(path) or not os.path.isfile(path):
+            return {}
+        mime, magics = IMAGE_TYPES[ext]
+        try:
+            size = os.path.getsize(path)
+            with open(path, "rb") as fh:
+                head = fh.read(65536)
+                if not head.startswith(magics):
+                    return {}
+                if ext in ("jpg", "jpeg"):
+                    thumb = exif_thumbnail(head)
+                    if thumb:
+                        return {"mime": "image/jpeg", "data": base64.b64encode(thumb).decode("ascii")}
+                if size > THUMB_MAX:
+                    return {}
+                data = head + fh.read(THUMB_MAX)
+        except OSError:
+            return {}
+        return {"mime": mime, "data": base64.b64encode(data[:THUMB_MAX]).decode("ascii")}
 
     # ---- looking before recovering -----------------------------------------
     def preview(self, volume_id, rel):
@@ -255,10 +395,12 @@ class Recovery:
             raise RecoverError(f"This file can't be read: {err.strerror}")
 
     # ---- copying out -----------------------------------------------------
-    def start_copy(self, items):
+    def start_copy(self, items, out_dir=None):
         with self._lock:
             if self.task["state"] == "running":
                 raise RecoverError("Another recovery is already running.")
+            if out_dir:
+                self.out_dir = out_dir
             self._cancel = False
             self.task = {"kind": "copy", "state": "running", "copied": 0, "bytes": 0, "failed": [],
                          "current": "", "message": "", "damaged": []}
@@ -369,13 +511,15 @@ class Recovery:
             self.task["message"] = message
 
     # ---- scanning for files ----------------------------------------------
-    def start_carve(self):
+    def start_carve(self, out_dir=None):
         tool = self.system.which("photorec")
         if not tool:
             raise RecoverError("The file scanner (PhotoRec) is not available on this system.")
         with self._lock:
             if self.task["state"] == "running":
                 raise RecoverError("Another recovery is already running.")
+            if out_dir:
+                self.out_dir = out_dir
             self._cancel = False
             outdir = os.path.join(self.out_dir, "found-files")
             os.makedirs(outdir, exist_ok=True)

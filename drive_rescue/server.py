@@ -20,6 +20,7 @@ from . import preflight as preflight_mod
 from . import report as report_mod
 from . import plan as plan_mod
 from .job import ImageJob, JobError
+from . import images as images_mod
 from .recover import RecoverError, Recovery
 from .system import System
 from .util import human_size
@@ -89,6 +90,8 @@ class App:
         self.recovery = None
         self.network = None       # a shared folder that is mounted for saving the copy: {"mountpoint", "label"}
         self.last_task = None     # the last file-recovery summary, kept for the report
+        self._found = None        # copies found on a drive when browsing a saved copy
+        self._found_mount = None  # a drive opened only to look for them
         self._lock = threading.RLock()
         self.routes = {
             ("GET", "system/info"): self.system_info, ("POST", "system/power"): self.system_power, ("POST", "system/desktop"): self.system_desktop,
@@ -104,6 +107,8 @@ class App:
             ("POST", "recover/copy"): self.recover_copy, ("POST", "recover/carve"): self.recover_carve,
             ("GET", "recover/status"): self.recover_status, ("POST", "recover/cancel"): self.recover_cancel,
             ("POST", "recover/close"): self.recover_close,
+            ("GET", "image/find"): self.image_find, ("POST", "image/open"): self.image_open,
+            ("GET", "recover/search"): self.recover_search, ("GET", "recover/thumb"): self.recover_thumb,
         }
 
     def dispatch(self, method, route, query, body):
@@ -323,18 +328,21 @@ class App:
 
     def recover_open(self, q, b):
         with self._lock:
-            if not self.job or not self.plan:
+            browsing = bool(self.plan and self.plan.get("mode") == "image")
+            if not self.plan or (not self.job and not browsing):
                 raise ApiError("There is no copy to open yet.", 409)
             if self.plan.get("mode") == "clone":
                 raise ApiError("A cloned drive has no image to open.", 409)
-            if self.job.state in BUSY:
+            if self.job and self.job.state in BUSY:
                 raise ApiError("Pause or finish the copy before opening it.", 409)
             if not os.path.exists(self.plan["image"]):
                 raise ApiError("The copy file was not found on the healthy drive.", 409)
             if not self.recovery:
                 self.recovery = Recovery(self.system, self.plan["image"], self.plan["target_dir"], self.plan.get("mapfile"))
             info = self.recovery.open()
-            info["out_dir"] = os.path.join(self.plan["target_dir"], "recovered")
+            info["browsing"] = browsing
+            info["image_name"] = os.path.basename(self.plan["image"])
+            info["out_dir"] = "" if browsing else os.path.join(self.plan["target_dir"], "recovered")
             return info
 
     def recover_list(self, q, b):
@@ -346,12 +354,133 @@ class App:
             raise ApiError("Choose at least one file or folder.")
         clean = [{"volume": str(i.get("volume", "")), "rel": str(i.get("rel", ""))}
                  for i in items if isinstance(i, dict)]
-        self._recovery().start_copy(clean)
-        return self._recovery().status()
+        rec = self._recovery()
+        rec.start_copy(clean, self._recover_dest(b.get("dest")))
+        return rec.status()
 
     def recover_carve(self, q, b):
-        self._recovery().start_carve()
-        return self._recovery().status()
+        rec = self._recovery()
+        rec.start_carve(self._recover_dest(b.get("dest")))
+        return rec.status()
+
+    def _recover_dest(self, dest):
+        """The folder recovered files are saved in. None means the default: next to the copy of this session.
+        Otherwise a drive partition or the connected network folder, plus a folder name on it."""
+        if not dest:
+            if self.plan and self.plan.get("mode") == "image":
+                raise ApiError("Choose where to save the recovered files.")
+            return None
+        if not isinstance(dest, dict):
+            raise ApiError("Choose where to save the recovered files.")
+        kind = dest.get("kind")
+        folder = plan_mod.clean_folder(dest.get("folder") or "Recovered")
+        if kind == "same":
+            if not self.plan or self.plan.get("mode") == "image" or not self.plan.get("target_dir"):
+                raise ApiError("Choose a drive to save the recovered files on.")
+            return self.plan["target_dir"]
+        if kind == "network":
+            if not self.network:
+                raise ApiError("Connect to the shared folder first.")
+            return os.path.join(self.network["mountpoint"], folder)
+        if kind != "partition":
+            raise ApiError("Choose where to save the recovered files.")
+        drives = drives_mod.list_drives(self.system)
+        drive, part = plan_mod.find_partition(drives, str(dest.get("path", "")))
+        if part is None:
+            raise ApiError("That drive was not found. Rescan and pick it again.")
+        if drive["is_boot"]:
+            raise ApiError("The rescue USB stick can't be used to save files. Pick another drive.")
+        src = (self.plan or {}).get("source") or {}
+        if src.get("path") and src["path"] == drive["path"]:
+            raise ApiError("Files can't be saved on the failing drive. Pick a different drive.")
+        if not part["dest_ok"]:
+            raise ApiError(f"This partition can't be used: {part['dest_reason']}.")
+        found = getattr(self, "_found", None)
+        if found and found.get("part") == part["path"] and getattr(self, "_found_mount", None):
+            ok, err = self.system.remount_rw(self._found_mount)  # it was opened read-only to look around
+            if not ok:
+                raise ApiError(plan_mod.explain_mount_error(err, part["fstype"]))
+            return os.path.join(self._found_mount, folder)
+        mp, err = plan_mod.ensure_mounted_rw(self.system, part)
+        if err:
+            raise ApiError(err)
+        return os.path.join(mp, folder)
+
+    # ---- opening a copy saved earlier
+    def _release_found(self):
+        """Let go of a drive that was opened only to look for copies on it."""
+        mp = getattr(self, "_found_mount", None)
+        if mp:
+            self.system.umount(mp)
+        self._found_mount = None
+
+    def image_find(self, q, b):
+        """Copies (image files) saved in one place: a drive partition, or the connected network folder.
+        The drive is opened read-only and stays open so a copy on it can be browsed."""
+        where = (q.get("where") or [""])[0]
+        with self._lock:
+            if self.recovery:  # e.g. the page was reloaded while a copy was open
+                if self.recovery.task.get("state") == "running":
+                    raise ApiError("Files are still being recovered. Wait for that to finish first.", 409)
+                self.recovery.close()
+                self.recovery = None
+            self._release_found()
+            part_path = None
+            if where == "network":
+                if not self.network:
+                    raise ApiError("Connect to the shared folder first.")
+                root = self.network["mountpoint"]
+            else:
+                drives = drives_mod.list_drives(self.system)
+                drive, part = plan_mod.find_partition(drives, where)
+                if part is None:
+                    raise ApiError("That drive was not found. Rescan and pick it again.")
+                if drive["is_boot"]:
+                    raise ApiError("That is the rescue USB stick. Choose the drive your copy was saved on.")
+                if not part["fstype"]:
+                    raise ApiError("This partition has no file system that can be read.")
+                part_path = part["path"]
+                mounted = [m for m in part["mountpoints"] if m]
+                if mounted:
+                    root = mounted[0]
+                else:
+                    root = os.path.join(plan_mod.MOUNT_ROOT, "find-" + part["name"])
+                    ok, err = self.system.mount(part["path"], root, part["fstype"], read_only=True)
+                    if not ok:
+                        raise ApiError(plan_mod.explain_mount_error(err, part["fstype"]))
+                    self._found_mount = root
+            items = images_mod.scan(root)
+            self._found = {"where": where, "part": part_path, "root": root,
+                           "items": {os.path.relpath(i["path"], root): i for i in items}}
+            return {"images": [{"id": rel, **{k: i[k] for k in ("name", "folder", "size_text", "mtime", "model", "percent")}}
+                               for rel, i in self._found["items"].items()]}
+
+    def image_open(self, q, b):
+        """Open one of the copies image_find listed, so its files can be browsed and recovered."""
+        found = getattr(self, "_found", None)
+        rel = str(b.get("id", ""))
+        if not found or rel not in found["items"]:
+            raise ApiError("Look for the copy again.", 409)
+        item = found["items"][rel]
+        with self._lock:
+            if self.job and self.job.state in BUSY:
+                raise ApiError("A copy is running. Wait for it to finish first.", 409)
+            if self.recovery:
+                self.recovery.close()
+                self.recovery = None
+            if not os.path.exists(item["path"]):
+                raise ApiError("That copy could not be found any more.", 409)
+            self.job = None
+            self.plan = {"mode": "image", "image": item["path"], "mapfile": item["mapfile"],
+                         "target_dir": os.path.dirname(item["path"]), "folder": item["folder"], "source": {}}
+            self.last_task = None
+            return {"ok": True, "name": item["name"]}
+
+    def recover_search(self, q, b):
+        return self._recovery().search((q.get("volume") or [""])[0], (q.get("q") or [""])[0], (q.get("kind") or [""])[0])
+
+    def recover_thumb(self, q, b):
+        return self._recovery().thumbnail((q.get("volume") or [""])[0], (q.get("rel") or [""])[0])
 
     def recover_status(self, q, b):
         return self._recovery().status()
@@ -369,9 +498,22 @@ class App:
                 self.last_task = self.recovery.status()
                 self.recovery.close()
                 self.recovery = None
+            self._release_found()
         return {"ok": True}
 
     def report(self, q, b):
+        if self.plan and self.plan.get("mode") == "image":
+            task = self.recovery.status() if self.recovery else self.last_task
+            text = report_mod.build_image_report(self.plan, task)
+            path = os.path.splitext(self.plan["image"])[0] + ".recovery-report.txt"
+            saved = ""
+            try:
+                with open(path, "w", encoding="utf-8") as fh:
+                    fh.write(text)
+                saved = path
+            except OSError:
+                pass  # the copy may be on a read-only drive; the report is still downloaded
+            return {"text": text, "filename": "DriveRescue-report.txt", "saved_to": saved}
         if not self.job or not self.plan:
             raise ApiError("There is nothing to report on yet.", 409)
         snap = self.status(q, b)
@@ -399,6 +541,7 @@ class App:
                 self.job.pause()
             if self.recovery:
                 self.recovery.close()
+            self._release_found()
             self._drop_network()
 
 

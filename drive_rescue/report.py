@@ -24,6 +24,30 @@ def _health_lines(health):
     return out
 
 
+def build_image_report(plan, task, when=None):
+    """The report for files recovered from a copy saved earlier (no copy was made in this session)."""
+    when = when or time.strftime("%A %d %B %Y, %H:%M")
+    lines = ["DRIVE RESCUE REPORT", when, "", f"Files recovered from a saved copy: {plan.get('image', '')}", ""]
+    if task and task.get("state") not in (None, "idle"):
+        what = "files found by scanning" if task.get("kind") == "carve" else "files recovered"
+        lines.append("FILES")
+        lines.append(f"  {task.get('copied', 0)} {what}" + (f" ({task['bytes_text']})" if task.get("bytes") else ""))
+        if task.get("damaged_count"):
+            lines.append(f"  {task['damaged_count']} copied with missing parts (the unreadable pieces are blank, "
+                         f"so these may not open properly):")
+            for f in (task.get("damaged") or [])[:20]:
+                lines.append(f"    - {f['path']} ({f['bad_text']} missing)")
+        if task.get("failed_count"):
+            lines.append(f"  {task['failed_count']} could not be read:")
+            for f in (task.get("failed") or [])[:20]:
+                lines.append(f"    - {f['path']} ({f['reason']})")
+        if task.get("out_dir"):
+            lines.append(f"  Saved in: {task['out_dir']}")
+        lines.append("")
+    lines.append("The saved copy was only ever read from, never written to.")
+    return "\n".join(lines) + "\n"
+
+
 def build_report(plan, snap, health=None, task=None, when=None):
     """Return the report as text. `plan` and `snap` are the job's plan and snapshot."""
     clone = (snap or {}).get("mode") == "clone"
