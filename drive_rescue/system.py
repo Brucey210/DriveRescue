@@ -155,6 +155,28 @@ class System:
             return None, err.strip() or "could not attach the image"
         return out.strip(), ""
 
+    def partition_offset(self, path):
+        """Where a partition starts inside its whole disk, in bytes (0 for a whole disk or when unknown)."""
+        name = os.path.basename(os.path.realpath(path))
+        try:
+            with open(f"/sys/class/block/{name}/start") as fh:
+                return int(fh.read().strip()) * 512
+        except (OSError, ValueError):
+            return 0
+
+    def dm_create(self, name, table):
+        """A read-only virtual disk built from a table. Used so the unrecovered parts of the copy
+        answer with a read error instead of silently reading as blanks."""
+        rc, _out, err = self.run(["dmsetup", "create", name, "--readonly"], timeout=30, input_text=table)
+        if rc != 0:
+            return None, err.strip() or "dmsetup failed"
+        self.run(["dmsetup", "mknodes", name], timeout=10)
+        path = "/dev/mapper/" + name
+        return (path, "") if os.path.exists(path) else (None, "the virtual disk did not appear")
+
+    def dm_remove(self, name):
+        self.run(["dmsetup", "remove", "--retry", name], timeout=30)
+
     def detach_image(self, loop):
         self.run(["losetup", "-d", loop], timeout=30)
 

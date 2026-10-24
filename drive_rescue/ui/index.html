@@ -735,7 +735,10 @@ function recoverPaint() {
       .concat(parts.map((p, i) => `<button class="link" data-act="crumb" data-rel="${esc(parts.slice(0, i + 1).join("/"))}">${esc(p)}</button>`)).join(" › ");
     const vols = r.info.volumes.length > 1 ? `<label class="muted">Drive section: <select id="volSel">${r.info.volumes.map(v => `<option value="${esc(v.id)}" ${v.id === r.vol ? "selected" : ""}>${esc(v.name)} (${esc(v.fstype)}, ${esc(v.size_text)})</option>`).join("")}</select></label>` : "";
     const all = r.dir.entries.length && r.dir.entries.every(e => r.sel.has(r.vol + ":" + e.rel));
-    body = `${vols}${previewCard(r.preview)}<div class="crumbs">${crumbs}</div>
+    const lost = r.info.volumes.some(v => v.damaged_bytes > 0);
+    const dmg = r.info.unchecked ? banner("warn", "Parts of the copy are missing and this drive can't tell which files they affect, so recovered files may contain blanks. Check important ones.")
+      : lost ? banner("plain", "Parts of the copy could not be recovered. A file that sits partly in those parts is still saved, and is listed as damaged afterwards.") : "";
+    body = `${dmg}${vols}${previewCard(r.preview)}<div class="crumbs">${crumbs}</div>
       <div class="list" role="group" aria-label="Files in this folder">
         ${r.dir.entries.length ? `<div class="entry"><input type="checkbox" id="selAll" aria-label="Select everything in this folder" ${all ? "checked" : ""}><span class="nm muted">Select everything in this folder</span></div>` : ""}
         ${r.dir.entries.map(e => `<div class="entry"><input type="checkbox" data-rel="${esc(e.rel)}" aria-label="Select ${esc(e.name)}" ${r.sel.has(r.vol + ":" + e.rel) ? "checked" : ""}>
@@ -767,8 +770,9 @@ function previewCard(p) {
 function taskCard(t) {
   const what = t.kind === "carve" ? "Scanning for files" : "Copying your files";
   const head = { running: what + "…", done: "Finished", error: "Stopped", cancelled: "Cancelled" }[t.state] || what;
+  const damaged = t.damaged_count ? `<br><span class="muted">${t.damaged_count} ${t.damaged_count === 1 ? "has" : "have"} missing parts and may not open properly.</span>` : "";
   const failed = t.failed_count ? `<br><span class="muted">${t.failed_count} could not be read and were skipped.</span>` : "";
-  return `<div class="card" aria-live="polite"><h2>${esc(head)}</h2>${t.current && t.state === "running" ? `<div class="muted">${esc(t.current)}</div>` : ""}<b>${t.copied}</b> ${(t.copied === 1 ? "file " : "files ") + (t.kind === "carve" ? "found" : "copied")}${t.bytes ? ` · ${esc(t.bytes_text)}` : ""}${failed}${t.message ? `<br>${esc(t.message)}` : ""}</div>`;
+  return `<div class="card" aria-live="polite"><h2>${esc(head)}</h2>${t.current && t.state === "running" ? `<div class="muted">${esc(t.current)}</div>` : ""}<b>${t.copied}</b> ${(t.copied === 1 ? "file " : "files ") + (t.kind === "carve" ? "found" : "copied")}${t.bytes ? ` · ${esc(t.bytes_text)}` : ""}${damaged}${failed}${t.message ? `<br>${esc(t.message)}` : ""}</div>`;
 }
 function watchTask() {
   clearInterval(S.rec.timer);
@@ -804,6 +808,7 @@ function viewDone() {
     <div class="card"><h2>Where to find them</h2><div class="mono">${esc(folder)}</div>
       <p class="muted" style="margin:8px 0 0">On the healthy drive, inside the folder "${esc((S.status && S.status.folder) || "DriveRescue")}".</p></div>
     <div class="card"><h2>Summary</h2><b>${t.copied || 0}</b> ${(t.copied === 1 ? "file " : "files ") + (t.kind === "carve" ? "found" : "recovered")}${t.bytes ? ` (${esc(t.bytes_text)})` : ""}
+      ${t.damaged_count ? `<p style="margin:8px 0 0"><b>${t.damaged_count} ${t.damaged_count === 1 ? "file was" : "files were"} saved with missing parts</b> and may not open properly: ${esc((t.damaged || []).slice(0, 5).map(f => f.path.split("/").pop()).join(", "))}${t.damaged_count > 5 ? ", and more" : ""}.</p>` : ""}
       ${t.failed_count ? `<p class="muted" style="margin:8px 0 0">${t.failed_count} could not be read: ${esc((t.failed || []).slice(0, 5).map(f => f.path.split("/").pop()).join(", "))}${t.failed_count > 5 ? ", and more" : ""}.</p>` : ""}</div>
     ${reportCard}`;
   footer(S.rec.finished ? "" : btn("backRecover", "Recover more"), S.rec.finished ? "" : btn("finish", "Finish", "primary"));

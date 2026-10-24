@@ -10,6 +10,7 @@ import os
 import subprocess
 import threading
 
+from . import mapfile as mapfile_mod
 from .drives import _mountpoints
 from .plan import MOUNT_ROOT
 from .util import human_size
@@ -29,6 +30,46 @@ class RecoverError(Exception):
     pass
 
 
+SECTOR = 512
+SALVAGE_PIECE = 4096
+
+
+def damage_table(segments, part_start, part_size, base_dev):
+    """The device-mapper table that shows one partition of the copy with every unrecovered part
+    turned into a read error. `segments` are the progress file's (position, size, status).
+    Returns (table text, number of bytes that are not recovered). Good areas are trimmed inward and bad
+    ones grow outward to whole sectors, so a bad byte can never be passed off as good."""
+    end = part_start + part_size
+    good = []
+    for pos, size, status in sorted(segments):
+        if status != "+":
+            continue
+        lo, hi = max(pos, part_start), min(pos + size, end)
+        lo = -(-lo // SECTOR) * SECTOR
+        hi = hi // SECTOR * SECTOR
+        if hi > lo:
+            if good and good[-1][1] >= lo:
+                good[-1] = (good[-1][0], max(good[-1][1], hi))
+            else:
+                good.append((lo, hi))
+    lines, cursor, bad = [], part_start, 0
+    total_sectors = part_size // SECTOR
+    for lo, hi in good + [(end - end % SECTOR if end % SECTOR else end, end - end % SECTOR if end % SECTOR else end)]:
+        if lo > cursor:
+            lines.append(("error", cursor, lo))
+            bad += lo - cursor
+        if hi > lo:
+            lines.append(("linear", lo, hi))
+        cursor = max(cursor, hi)
+    out = []
+    for kind, lo, hi in lines:
+        start, length = (lo - part_start) // SECTOR, (hi - lo) // SECTOR
+        if length <= 0 or start >= total_sectors:
+            continue
+        out.append(f"{start} {length} error" if kind == "error" else f"{start} {length} linear {base_dev} {start}")
+    return "\n".join(out) + "\n", bad
+
+
 def safe_join(root, rel):
     """Join rel under root, refusing any path that escapes it (including via symlinks)."""
     root_real = os.path.realpath(root)
@@ -42,10 +83,12 @@ def safe_join(root, rel):
 
 
 class Recovery:
-    def __init__(self, system, image, out_dir):
+    def __init__(self, system, image, out_dir, mapfile=None):
         self.system = system
         self.image = image
         self.out_dir = out_dir
+        self.mapfile = mapfile
+        self._dm = []
         self.loop = None
         self.volumes = []
         self._mounts = []
@@ -53,7 +96,7 @@ class Recovery:
         self._cancel = False
         self._proc = None
         self.task = {"kind": None, "state": "idle", "copied": 0, "bytes": 0, "failed": [],
-                     "current": "", "message": ""}
+                     "current": "", "message": "", "damaged": []}
 
     # ---- opening ---------------------------------------------------------
     def open(self):
@@ -77,11 +120,17 @@ class Recovery:
             if not fstype or fstype in ("swap", "LVM2_member", "crypto_LUKS"):
                 continue
             existing = _mountpoints(part)
+            checked, damaged = None, 0
             if existing:
                 mp = existing[0]
             else:
                 mp = os.path.join(MOUNT_ROOT, "image-%d" % i)
-                ok, _msg = self.system.mount(part["path"], mp, fstype, read_only=True)
+                device, checked, damaged = self._checked_device(part, i)
+                ok, _msg = self.system.mount(device, mp, fstype, read_only=True)
+                if not ok and device != part["path"]:
+                    self._drop_dm()  # could not open it with the damage check; open it plainly
+                    device, checked, damaged = part["path"], False, 0
+                    ok, _msg = self.system.mount(device, mp, fstype, read_only=True)
                 if not ok:
                     continue
                 self._mounts.append(mp)
@@ -91,17 +140,52 @@ class Recovery:
                 "fstype": fstype,
                 "size_text": human_size(part.get("size") or 0),
                 "mountpoint": mp,
+                "damage_check": checked,
+                "damaged_bytes": damaged,
             })
         return self.describe()
 
+    def _checked_device(self, part, index):
+        """The device to open for this partition. When parts of the copy were never recovered it is a
+        virtual disk where those parts give read errors, so damaged files are noticed instead of
+        coming out with blanks in them. Returns (device, checked, bytes not recovered); checked is
+        None when there was nothing to check, True when it works, False when it could not be done."""
+        if not self.mapfile or not os.path.exists(self.mapfile):
+            return part["path"], None, 0
+        try:
+            with open(self.mapfile) as fh:
+                mf = mapfile_mod.parse_mapfile(fh.read())
+        except OSError:
+            return part["path"], False, 0
+        start = self.system.partition_offset(part["path"]) if part["path"] != self.loop else 0
+        size = part.get("size") or 0
+        if not size or not mf.segments:
+            return part["path"], False, 0
+        table, bad = damage_table(mf.segments, start, size, part["path"])
+        if bad == 0:
+            return part["path"], True, 0
+        name = f"dr-image-{os.getpid()}-{index}"
+        dev, _err = self.system.dm_create(name, table)
+        if not dev:
+            return part["path"], False, 0
+        self._dm.append(name)
+        return dev, True, bad
+
+    def _drop_dm(self):
+        for name in reversed(self._dm):
+            self.system.dm_remove(name)
+        self._dm = []
+
     def describe(self):
         return {"volumes": [{k: v for k, v in vol.items() if k != "mountpoint"} for vol in self.volumes],
-                "readable": bool(self.volumes)}
+                "readable": bool(self.volumes),
+                "unchecked": any(v.get("damage_check") is False for v in self.volumes)}
 
     def close(self):
         for mp in reversed(self._mounts):
             self.system.umount(mp)
         self._mounts = []
+        self._drop_dm()
         if self.loop:
             self.system.detach_image(self.loop)
         self.loop, self.volumes = None, []
@@ -177,25 +261,63 @@ class Recovery:
                 raise RecoverError("Another recovery is already running.")
             self._cancel = False
             self.task = {"kind": "copy", "state": "running", "copied": 0, "bytes": 0, "failed": [],
-                         "current": "", "message": ""}
+                         "current": "", "message": "", "damaged": []}
         threading.Thread(target=self._copy_worker, args=(items,), daemon=True).start()
 
     def _copy_one(self, src, dst):
+        """Copy one file. Where part of it sits in a damaged area, the readable parts are still saved
+        and the unreadable pieces are filled with blanks, and the file is listed as damaged so nobody
+        mistakes it for a good one. A file that cannot be read at all is not kept."""
         os.makedirs(os.path.dirname(dst), exist_ok=True)
+        bad = 0
         with open(src, "rb") as fin, open(dst, "wb") as fout:
-            while True:
+            fd, size, pos = fin.fileno(), os.fstat(fin.fileno()).st_size, 0
+            while pos < size:
                 if self._cancel:
                     raise RecoverError("cancelled")
-                block = fin.read(1 << 20)
+                want = min(1 << 20, size - pos)
+                try:
+                    block = os.pread(fd, want, pos)
+                except OSError as err:
+                    if err.errno != errno.EIO:
+                        raise
+                    block, lost = self._salvage(fd, pos, want)
+                    bad += lost
                 if not block:
                     break
                 fout.write(block)
+                pos += len(block)
                 self.task["bytes"] += len(block)
+        if bad and bad >= size:
+            os.remove(dst)
+            raise OSError(errno.EIO, "unreadable")
         try:
             os.utime(dst, (os.stat(src).st_atime, os.stat(src).st_mtime))
         except OSError:
             pass
         self.task["copied"] += 1
+        if bad:
+            self.task["damaged"].append({"path": src, "bad_bytes": bad, "bad_text": human_size(bad)})
+
+    @staticmethod
+    def _salvage(fd, pos, want):
+        """Read a stretch piece by piece. Returns (data, bytes that could not be read)."""
+        out, lost = [], 0
+        end = pos + want
+        while pos < end:
+            n = min(SALVAGE_PIECE, end - pos)
+            try:
+                piece = os.pread(fd, n, pos)
+            except OSError as err:
+                if err.errno != errno.EIO:
+                    raise
+                piece = b"\0" * n
+                lost += n
+            if not piece:
+                break
+            out.append(piece)
+            pos += len(piece)
+        return b"".join(out), lost
 
     def _copy_worker(self, items):
         try:
@@ -258,7 +380,7 @@ class Recovery:
             outdir = os.path.join(self.out_dir, "found-files")
             os.makedirs(outdir, exist_ok=True)
             self.task = {"kind": "carve", "state": "running", "copied": 0, "bytes": 0, "failed": [],
-                         "current": "", "message": "", "outdir": outdir}
+                         "current": "", "message": "", "outdir": outdir, "damaged": []}
         cmd = [tool, "/d", outdir + os.sep, "/cmd", self.image, "partition_none,fileopt,everything,enable,wholespace,search"]
         self._proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
         threading.Thread(target=self._carve_worker, daemon=True).start()
@@ -291,6 +413,8 @@ class Recovery:
         if t.get("kind") == "carve":
             t["copied"] = self._count_found()
         t["bytes_text"] = human_size(t.get("bytes", 0))
+        t["damaged_count"] = len(t.get("damaged", []))
+        t["damaged"] = t.get("damaged", [])[:50]
         t["failed_count"] = len(t.get("failed", []))
         t["failed"] = t.get("failed", [])[:50]
         t["out_dir"] = os.path.join(self.out_dir, "found-files" if t.get("kind") == "carve" else "recovered")

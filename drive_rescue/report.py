@@ -67,6 +67,13 @@ def build_report(plan, snap, health=None, task=None, when=None):
                 lines.append(f"    - {f['path']} ({f['reason']})")
             if task["failed_count"] > 20:
                 lines.append("    - and more")
+        if task.get("damaged_count"):
+            lines.append(f"  {task['damaged_count']} copied with missing parts (the unreadable pieces are blank, "
+                         f"so these may not open properly):")
+            for f in (task.get("damaged") or [])[:20]:
+                lines.append(f"    - {f['path']} ({f['bad_text']} missing)")
+            if task["damaged_count"] > 20:
+                lines.append("    - and more")
         if task.get("out_dir"):
             lines.append(f"  Saved in: {task['out_dir']}")
         lines.append("")

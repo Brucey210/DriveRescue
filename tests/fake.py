@@ -50,6 +50,13 @@ class FakeSystem(System):
     def which(self, name):
         return SHIM if name in ("ddrescue", "gddrescue") else shutil.which(name)
 
+    def dm_create(self, name, table):
+        self.calls.append(("dm_create", name, table))
+        return "/dev/mapper/" + name, ""
+
+    def dm_remove(self, name):
+        self.calls.append(("dm_remove", name))
+
     def close_kiosk(self):
         self.kiosk_closed = True
 

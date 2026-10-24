@@ -332,7 +332,7 @@ class App:
             if not os.path.exists(self.plan["image"]):
                 raise ApiError("The copy file was not found on the healthy drive.", 409)
             if not self.recovery:
-                self.recovery = Recovery(self.system, self.plan["image"], self.plan["target_dir"])
+                self.recovery = Recovery(self.system, self.plan["image"], self.plan["target_dir"], self.plan.get("mapfile"))
             info = self.recovery.open()
             info["out_dir"] = os.path.join(self.plan["target_dir"], "recovered")
             return info
