@@ -38,6 +38,7 @@ open_browser() {
   if [ "$MODE" = "--kiosk" ]; then
     # Never let the screen blank or lock while a long copy runs.
     xset s off -dpms s noblank >/dev/null 2>&1
+    rm -f /tmp/drive-rescue-desktop
     PROFILE=/tmp/drive-rescue-profile
     mkdir -p "$PROFILE"
     cat >"$PROFILE/user.js" <<'JSEOF'
@@ -54,7 +55,8 @@ JSEOF
     for b in firefox firefox-esr; do
       if command -v "$b" >/dev/null 2>&1; then
         # If the window is closed by accident, bring it straight back.
-        while kill -0 $SERVER 2>/dev/null || [ -z "$SERVER" ]; do
+        # (unless the person chose "Go to the desktop", which leaves a flag file behind)
+        while [ ! -e /tmp/drive-rescue-desktop ] && { kill -0 $SERVER 2>/dev/null || [ -z "$SERVER" ]; }; do
           "$b" --kiosk --no-remote --profile "$PROFILE" "$URL" >/dev/null 2>&1
           sleep 2
         done

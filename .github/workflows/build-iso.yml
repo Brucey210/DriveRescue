@@ -15,7 +15,20 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Run the tests
-        run: python3 -m unittest discover -s tests
+        shell: bash
+        run: |
+          set +e
+          python3 -m unittest discover -s tests > test.log 2>&1
+          rc=$?
+          cat test.log
+          if [ $rc -ne 0 ]; then
+            # Put the failures where they show on the run page, not only in the long log.
+            {
+              echo "$(python3 --version) on $(uname -sr), user $(id -un)"
+              grep -v -e ResourceWarning -e 'open(' -e tracemalloc test.log | tail -70
+            } | python3 -c "import sys; t=sys.stdin.read().replace('%','%25').replace('\r','%0D').replace('\n','%0A'); print('::error title=Tests failed::'+t)"
+          fi
+          exit $rc
 
       - name: Install the tools
         run: sudo apt-get update && sudo apt-get install -y xorriso squashfs-tools

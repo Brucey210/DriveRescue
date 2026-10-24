@@ -102,12 +102,38 @@ def _attr(data, attr_id):
     return None
 
 
+def health_advice(status, details):
+    """A plain sentence on what the health check means for the person. Never alarmist, never falsely calm."""
+    def value(name):
+        for d in details:
+            if d["k"] == name:
+                try:
+                    return int(str(d["v"]).replace(",", ""))
+                except ValueError:
+                    return 0
+        return 0
+    if status == "failing":
+        extra = ""
+        if value("Unreadable sectors") or value("Waiting to be remapped"):
+            extra = " It has parts it can no longer read."
+        return ("This drive is failing." + extra + " Don't keep using it. Copy what you need now, "
+                "then replace it. Every extra hour of use can cost you files.")
+    if status == "warning":
+        return ("This drive is wearing out. It still works, but it has started to fail in small ways. "
+                "Copy your important files soon and plan to replace it.")
+    if status == "healthy":
+        return ("The drive itself reports no problems. If files still go missing or it is slow, the cause may be "
+                "the cable, the USB port, or the file system rather than the drive. Cloning works well here.")
+    return ("This drive didn't report its health, which is common with USB cases. That does not mean it is fine. "
+            "Judge it by how it behaves: clicking, freezing or very slow means treat it as failing.")
+
+
 def check_health(system, path):
     """Quick read-only SMART look. Never raises; unknown is a valid answer."""
     data = system.smartctl_json(path)
     if not data:
-        return {"status": "unknown", "label": "Unknown", "details": [
-            {"k": "SMART data", "v": "Not available from this drive", "level": "warn"}]}
+        det = [{"k": "SMART data", "v": "Not available from this drive", "level": "warn"}]
+        return {"status": "unknown", "label": "Unknown", "details": det, "advice": health_advice("unknown", det)}
     details, bad, warn = [], False, False
     passed = (data.get("smart_status") or {}).get("passed")
     if passed is False:
@@ -131,7 +157,17 @@ def check_health(system, path):
     if temp is not None:
         details.append({"k": "Temperature", "v": f"{temp} °C", "level": "warn" if temp >= 55 else "ok"})
     if bad:
-        return {"status": "failing", "label": "Failing", "details": details}
+        return {"status": "failing", "label": "Failing", "details": details, "advice": health_advice("failing", details)}
     if warn:
-        return {"status": "warning", "label": "Worn", "details": details}
-    return {"status": "healthy", "label": "Healthy", "details": details}
+        return {"status": "warning", "label": "Worn", "details": details, "advice": health_advice("warning", details)}
+    return {"status": "healthy", "label": "Healthy", "details": details, "advice": health_advice("healthy", details)}
+
+
+def drive_temperature(system, path):
+    """The drive's own temperature in degrees, or None when it doesn't report one."""
+    try:
+        data = system.smartctl_json(path) or {}
+    except Exception:
+        return None
+    temp = (data.get("temperature") or {}).get("current")
+    return temp if isinstance(temp, (int, float)) else None

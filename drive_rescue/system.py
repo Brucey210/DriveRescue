@@ -45,6 +45,23 @@ def network_mount_attempts(kind, address, share, mountpoint, credfile=None):
     raise ValueError(f"unknown kind {kind!r}")
 
 
+class _NoInhibit:
+    def close(self):
+        pass
+
+
+class _Inhibit:
+    def __init__(self, proc):
+        self.proc = proc
+
+    def close(self):
+        try:
+            self.proc.terminate()
+            self.proc.wait(timeout=5)
+        except Exception:
+            pass
+
+
 class System:
     """Real system access (run as root on the rescue USB)."""
 
@@ -98,6 +115,53 @@ class System:
         rc, _out, err = self.run(["blockdev", "--setro", path], timeout=10)
         return rc == 0, err.strip()
 
+    def is_readonly(self, path):
+        """True when the kernel really is refusing writes to this drive."""
+        rc, out, _err = self.run(["blockdev", "--getro", path], timeout=10)
+        return rc == 0 and out.strip() == "1"
+
+    def power_status(self):
+        """{"on_battery": bool, "percent": int or None}. A desktop with no battery is not on battery."""
+        base = "/sys/class/power_supply"
+        try:
+            names = sorted(os.listdir(base))
+        except OSError:
+            return {"on_battery": False, "percent": None}
+        on_battery, percent, mains_online = False, None, False
+        for name in names:
+            try:
+                with open(os.path.join(base, name, "type")) as fh:
+                    kind = fh.read().strip()
+                if kind == "Mains":
+                    with open(os.path.join(base, name, "online")) as fh:
+                        mains_online = mains_online or fh.read().strip() == "1"
+                elif kind == "Battery":
+                    with open(os.path.join(base, name, "status")) as fh:
+                        status = fh.read().strip()
+                    with open(os.path.join(base, name, "capacity")) as fh:
+                        percent = int(fh.read().strip())
+                    on_battery = on_battery or status == "Discharging"
+            except (OSError, ValueError):
+                continue
+        return {"on_battery": on_battery and not mains_online, "percent": percent}
+
+    def spot_reader(self, path, size):
+        """read(offset) used by the quick read test (the tests swap in a pretend one)."""
+        from . import assess
+        return assess.real_reader(path, size)
+
+    def inhibit_sleep(self):
+        """Keep the computer awake (no sleep, no idle, lid closing ignored) until .close() is called."""
+        if not shutil.which("systemd-inhibit"):
+            return _NoInhibit()
+        try:
+            proc = subprocess.Popen(["systemd-inhibit", "--what=sleep:idle:handle-lid-switch", "--who=Drive Rescue",
+                                     "--why=Copying a drive", "--mode=block", "sleep", "infinity"],
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except OSError:
+            return _NoInhibit()
+        return _Inhibit(proc)
+
     def set_readwrite(self, path):
         """Undo set_readonly. Only the clone target is ever made writable again."""
         rc, _out, err = self.run(["blockdev", "--setrw", path], timeout=10)
@@ -140,6 +204,10 @@ class System:
                 except OSError:
                     pass
 
+    def remount_rw(self, mountpoint):
+        rc, _out, err = self.run(["mount", "-o", "remount,rw", mountpoint], timeout=60)
+        return rc == 0, err.strip()
+
     def umount(self, mountpoint):
         rc, _out, err = self.run(["umount", mountpoint], timeout=60)
         return rc == 0, err.strip()
@@ -155,6 +223,47 @@ class System:
             return None, err.strip() or "could not attach the image"
         return out.strip(), ""
 
+    def partition_offset(self, path):
+        """Where a partition starts inside its whole disk, in bytes (0 for a whole disk or when unknown)."""
+        name = os.path.basename(os.path.realpath(path))
+        try:
+            with open(f"/sys/class/block/{name}/start") as fh:
+                return int(fh.read().strip()) * 512
+        except (OSError, ValueError):
+            return 0
+
+    def dm_create(self, name, table):
+        """A read-only virtual disk built from a table. Used so the unrecovered parts of the copy
+        answer with a read error instead of silently reading as blanks."""
+        rc, _out, err = self.run(["dmsetup", "create", name, "--readonly"], timeout=30, input_text=table)
+        if rc != 0:
+            return None, err.strip() or "dmsetup failed"
+        self.run(["dmsetup", "mknodes", name], timeout=10)
+        path = "/dev/mapper/" + name
+        return (path, "") if os.path.exists(path) else (None, "the virtual disk did not appear")
+
+    def dm_remove(self, name):
+        self.run(["dmsetup", "remove", "--retry", name], timeout=30)
+
+    def crypt_open(self, device, name, password, kind):
+        """Unlock a BitLocker or LUKS section read-only. The password is sent on standard input, never on
+        the command line. Returns (device path, "") or (None, a plain explanation)."""
+        cmd = ["cryptsetup", "open", "--readonly", "--key-file=-"]
+        if kind == "BitLocker":
+            cmd += ["--type", "bitlk"]
+        rc, _out, err = self.run(cmd + [device, name], timeout=120, input_text=password)
+        if rc == 127:
+            return None, "The tool that opens protected drives (cryptsetup) is not on this system."
+        if rc != 0:
+            low = (err or "").lower()
+            if "no key available" in low or rc == 2 or "passphrase" in low or "wrong" in low:
+                return None, "That password didn't work. Check it and try again."
+            return None, "This protected section could not be opened. " + (err.strip()[-120:] if err else "")
+        return "/dev/mapper/" + name, ""
+
+    def crypt_close(self, name):
+        self.run(["cryptsetup", "close", name], timeout=30)
+
     def detach_image(self, loop):
         self.run(["losetup", "-d", loop], timeout=30)
 
@@ -164,6 +273,10 @@ class System:
         cmd = ["systemctl", "poweroff"] if action == "poweroff" else ["systemctl", "reboot"]
         rc, _out, err = self.run(cmd, timeout=30)
         return rc == 0, err.strip()
+
+    def close_kiosk(self):
+        """Close the full-screen window (the one started with the kiosk profile)."""
+        self.run(["pkill", "-f", "drive-rescue-" + "profile"], timeout=10)
 
     def firmware(self):
         """How this computer started: "uefi" or "bios"."""

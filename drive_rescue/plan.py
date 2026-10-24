@@ -3,6 +3,7 @@ import json
 import os
 import re
 
+from . import mapfile as mapfile_mod
 from .drives import list_drives
 from .util import human_size, slug
 
@@ -154,6 +155,17 @@ def make_plan(system, source_path, dest_part_path, folder, opts=None, prepare=Tr
                     errors.append("That folder already holds a copy of a different drive. Choose another folder name.")
                     return result
             except (OSError, ValueError):
+                pass
+        if resume:
+            try:
+                with open(mapfile) as fh:
+                    mf = mapfile_mod.parse_mapfile(fh.read())
+                end = max((pos + size for pos, size, _st in mf.segments), default=0)
+                if end and end != source["size"]:
+                    errors.append("The saved progress in that folder is for a drive of a different size. "
+                                  "Choose another folder name so the two copies are not mixed together.")
+                    return result
+            except OSError:
                 pass
         if not resume:
             errors.append("A file with that name already exists in the folder but has no progress record. "

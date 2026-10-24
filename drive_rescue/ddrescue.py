@@ -15,6 +15,9 @@ STYLES = {
 }
 
 
+SLOW_AREA_RATE = 64 * 1024  # bytes per second; below this a stretch of the drive is skipped for now
+
+
 def sector_args(sector):
     """ddrescue assumes 512-byte sectors. With direct disc access (-d) a drive that really uses
     4096-byte sectors refuses reads that are not a multiple of its own size, so say what it is."""
@@ -29,13 +32,27 @@ def build_command(binary, source, image, mapfile, phase, opts, sector=512):
     cmd = [binary, "-d", "-p"]  # -d direct disc access, -p preallocate the image
     cmd += sector_args(sector)
     cmd += STYLES.get(opts.get("style", "gentle"), STYLES["gentle"])
-    if phase == "quick":
-        cmd += ["-n"]  # no scraping: skip trouble spots for now
+    if opts.get("reopen"):
+        cmd += ["--reopen-on-error"]  # a USB drive that wedges after an error gets a fresh connection
+    if phase in ("quick", "meta"):
+        cmd += ["-n"]
+        if phase == "meta" and opts.get("area"):
+            pos, length = opts["area"]
+            cmd += ["-i", str(int(pos)), "-s", str(int(length))]  # only this stretch of the drive
+        if opts.get("min_read_rate") and phase == "quick":
+            # Where the drive crawls, move on and come back later: the good parts are saved first
+            # and a weak area can't eat hours. The retry pass covers whatever was skipped.
+            cmd += [f"--min-read-rate={SLOW_AREA_RATE}"]  # no scraping: skip trouble spots for now
         if opts.get("no_trim"):
             cmd += ["--no-trim"]  # and don't slowly trim around them yet; the retry pass does that
-    elif phase == "retry":
+    elif phase in ("retry", "reverse"):
         cmd += ["-r", str(int(opts.get("retries", 3)))]
-        if opts.get("direction") == "backward":
+        backward = opts.get("direction") == "backward"
+        if phase == "reverse":
+            backward = not backward  # the second look is from the other end
+            if opts.get("retrim"):
+                cmd += ["--retrim"]  # re-read the edges of bad areas that were given up on
+        if backward:
             cmd += ["-R"]
     else:
         raise ValueError(f"unknown phase {phase!r}")
@@ -77,7 +94,10 @@ def detect_features(system, binary):
         except Exception:
             out = err = ""
         text = (out or "") + (err or "")
-        _FEATURES[binary] = {"no_trim": "--no-trim" in text}
+        _FEATURES[binary] = {"no_trim": "--no-trim" in text,
+                             "min_read_rate": "--min-read-rate" in text,
+                             "reopen": "--reopen-on-error" in text,
+                             "retrim": "--retrim" in text}
     return _FEATURES[binary]
 
 

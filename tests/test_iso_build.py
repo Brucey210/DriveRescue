@@ -17,6 +17,7 @@ echo "xorriso $*" >> "$STUB_LOG"
 case "$*" in
   *"-find / -name airootfs.sfs"*) echo "'/sysresccd/x86_64/airootfs.sfs'";;
   *"-find / -name airootfs.sha512"*) echo "'/sysresccd/x86_64/airootfs.sha512'";;
+  *"-extract /boot/grub/grubsrcd.cfg"*) for a; do last=$a; done; echo "menuentry 'Drive Rescue' {" > "$last";;
   *"-osirrox on"*) for a; do last=$a; done; echo squash > "$last";;
   *"-outdev"*) for a; do prev=$cur; cur=$a; [ "$prev" = "-outdev" ] && out=$a; done; echo iso > "$out";;
   *"-find /sysrescue.d"*) echo "'/sysrescue.d/500-driverescue.yaml'";;
@@ -63,6 +64,9 @@ class BuildScriptTests(unittest.TestCase):
         self.assertIn(f"-indev {self.base} -outdev {self.out}", log)       # the original is only read
         self.assertIn("/sysrescue.d/500-driverescue.yaml", log)           # desktop starts by itself
         self.assertIn("/sysresccd/x86_64/airootfs.sha512", log)
+        for m in ("/boot/grub/grubsrcd.cfg", "/boot/grub/splash.png", "/sysresccd/boot/syslinux/sysresccd.cfg",
+                  "/sysresccd/boot/syslinux/sysresccd_sys.cfg"):         # one silent boot entry, branded
+            self.assertIn(m, log)
         self.assertIn("-comp zstd", log)                                   # same compression as the original
         self.assertIn("-b 1048576", log)
         tree = open(self.log + ".tree").read()

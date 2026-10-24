@@ -50,6 +50,40 @@ class Demo(Tweaked):
         return super().umount(mountpoint)
 
 
+def photo_with_thumbnail(color):
+    """A pretend camera photo: junk picture data, but a real small preview inside it."""
+    import io
+    import struct
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGB", (160, 120), color).save(buf, "JPEG")
+    thumb = buf.getvalue()
+    tiff = b"MM\x00\x2a" + struct.pack(">I", 8) + struct.pack(">H", 0) + struct.pack(">I", 14)
+    tiff += (struct.pack(">H", 2) + struct.pack(">HHII", 0x0201, 4, 1, 14 + 2 + 24 + 4)
+             + struct.pack(">HHII", 0x0202, 4, 1, len(thumb)) + struct.pack(">I", 0)) + thumb
+    app1 = b"Exif\0\0" + tiff
+    return b"\xff\xd8\xff\xe1" + struct.pack(">H", len(app1) + 2) + app1 + b"\xff\xdb\0\x04\0\0\xff\xda" + os.urandom(300_000)
+
+
+def add_saved_copy(s):
+    """A copy made on another day, sitting on the healthy drive, so "Browse a saved copy" has something to open."""
+    tree = os.path.join(s.root, "oldtree")
+    for d in ("Pictures/2019", "Work"):
+        os.makedirs(os.path.join(tree, d))
+    for i, color in enumerate(("#e8a63a", "#12968f", "#c0392b")):
+        open(os.path.join(tree, "Pictures", "2019", f"IMG_{4200 + i}.jpg"), "wb").write(photo_with_thumbnail(color))
+    open(os.path.join(tree, "Work", "Budget 2019.xlsx"), "wb").write(os.urandom(90_000))
+    open(os.path.join(tree, "Work", "Letter.txt"), "w").write("Dear Sam,\n")
+    folder = os.path.join(s.dest_mount, "OldLaptop")
+    os.makedirs(folder)
+    img = os.path.join(folder, "Toshiba-MQ01-1a2b.img")
+    subprocess.run(["truncate", "-s", "24M", img], check=True)
+    subprocess.run(["mkfs.ext4", "-q", "-F", "-L", "Old laptop", "-d", tree, img], check=True)
+    size = 24 * 1024 * 1024
+    open(img[:-4] + ".map", "w").write(f"0x0 + 1\n0x0 {size} +\n")
+    open(img[:-4] + ".job.json", "w").write('{"source": {"model": "Toshiba MQ01 500GB", "serial": "1A2B", "size": %d}}' % size)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8765)
@@ -72,6 +106,7 @@ def main():
     subprocess.run(["truncate", "-s", "192M", s.big], check=True)
     subprocess.run(["mkfs.ext4", "-q", "-F", "-L", "Windows", "-d", tree, "-E", "offset=%d" % (18432 * 512), s.small, "51200k"], check=True)
     build_gpt(s.small, 64 * 1024**2 // 512, [(ESP, 2048, 18431, "EFI"), (DATA, 18432, 120831, "Windows"), (RECOVERY, 120832, 129023, "Recovery")])
+    add_saved_copy(s)
     app = server.App(s)
     httpd, url = server.serve(app, port=args.port)
     print("Demo running at", url, flush=True)
