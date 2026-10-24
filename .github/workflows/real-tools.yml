@@ -1,0 +1,36 @@
+name: Real tools test
+
+# Runs the program against a pretend failing drive using the real ddrescue, device-mapper and cryptsetup,
+# which the ordinary tests can't do. Needs no ISO.
+on:
+  workflow_dispatch:
+  push:
+    branches: [iso-direct-boot]
+    paths:
+      - "tests/real/**"
+      - "tools/**"
+      - "drive_rescue/**"
+      - ".github/workflows/real-tools.yml"
+
+jobs:
+  real:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the tools
+        run: sudo apt-get update && sudo apt-get install -y gddrescue cryptsetup e2fsprogs dmsetup util-linux
+
+      - name: Run the real-tools tests
+        shell: bash
+        run: |
+          set +e
+          sudo -E env "PATH=$PATH" python3 tests/real/test_real_tools.py -v > real.log 2>&1
+          rc=$?
+          cat real.log
+          {
+            echo "ddrescue: $(ddrescue --version | head -1)"
+            tail -80 real.log
+          } | python3 -c "import sys; t=sys.stdin.read().replace('%','%25').replace('\r','%0D').replace('\n','%0A'); print('::' + ('error' if $rc else 'notice') + ' title=Real tools test::' + t)"
+          exit $rc
