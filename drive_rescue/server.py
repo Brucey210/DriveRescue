@@ -368,9 +368,28 @@ class App:
                  for i in items if isinstance(i, dict)]
         rec = self._recovery()
         dest = self._recover_dest(b.get("dest"))
+        self._check_room(rec, clean, dest)
         self.log.log(f"Recovering {len(clean)} item(s) to {dest or 'the default folder'}")
         rec.start_copy(clean, dest)
         return rec.status()
+
+    def _check_room(self, rec, items, dest):
+        """Say before starting, with real numbers, if the chosen files won't fit where they are going."""
+        target = dest or rec.out_dir
+        probe = target
+        while probe and not os.path.exists(probe):
+            parent = os.path.dirname(probe)
+            if parent == probe:
+                return
+            probe = parent
+        try:
+            free = self.system.free_bytes(probe)
+        except OSError:
+            return
+        need = rec.estimate(items)
+        if need is not None and need + plan_mod.SPACE_MARGIN > free:
+            raise ApiError(f"There isn't enough room there. The chosen files need {human_size(need)} and only "
+                           f"{human_size(free)} is free. Choose fewer files, or another drive.")
 
     def recover_carve(self, q, b):
         rec = self._recovery()

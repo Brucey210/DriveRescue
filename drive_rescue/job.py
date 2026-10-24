@@ -44,6 +44,9 @@ class ImageJob:
         self.heat_interval = 120.0  # seconds between temperature checks
         self.watch_tick = 1.0
         self.pause_reason = ""
+        self._inhibit = None
+        self._power = (0.0, {"on_battery": False, "percent": None})
+        self._speeds = deque(maxlen=90)
         self._auto = None          # (reason, message) when the program pauses by itself
         self.size = plan["source"]["size"]
         self.state = "idle"  # idle running pausing paused done stopped error
@@ -99,6 +102,18 @@ class ImageJob:
             if not drive or not drive.get("path"):
                 continue
             now = current.get(drive["path"])
+            if now is None and drive.get("serial"):
+                # unplugged and plugged back in: the system often gives it a new name, so find it by serial number
+                now = next((d for d in current.values() if d.get("serial") == drive["serial"] and d["size"] == drive["size"]), None)
+                if now is not None:
+                    self.log(f"The drive came back as {now['path']} (it was {drive['path']}); carrying on with it")
+                    if drive is self.plan.get("source"):
+                        self.plan["source"] = now
+                        self.system.set_readonly(now["path"])  # the new name has not been locked yet
+                    elif drive is self.plan.get("dest_drive"):
+                        self.plan["dest_drive"] = now
+                        self.plan["image"] = now["path"]
+                    continue
             if now is None:
                 raise JobError("The drive isn't connected any more. Plug it back in, wait a moment, and try again.")
             same_serial = not drive.get("serial") or not now.get("serial") or drive["serial"] == now["serial"]
@@ -137,6 +152,11 @@ class ImageJob:
         ok, err = self.system.set_readonly(src["path"])
         if not ok:
             self.message = f"Could not lock the failing drive as read-only ({err}); copying reads only, never writes."
+            self.log(f"WARNING: the failing drive could not be locked as read-only ({err})")
+        elif self.system.is_readonly(src["path"]):
+            self.log(f"The failing drive {src['path']} was locked as read-only; the system will refuse any write to it")
+        else:
+            self.log(f"WARNING: the failing drive {src['path']} did not confirm it is read-only")
         for part in src["partitions"]:
             for mp in part["mountpoints"]:
                 done, err = self.system.umount(mp)
@@ -163,6 +183,8 @@ class ImageJob:
         self._t0 = self.clock()
         self.state = "running"
         self.message = ""
+        if self._inhibit is None:
+            self._inhibit = self.system.inhibit_sleep()  # no sleeping or screen locking mid-copy
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
@@ -199,8 +221,8 @@ class ImageJob:
                     return
                 if self._want == "lost":
                     self._finish("error", "The failing drive disappeared. It may have been unplugged, or it stopped "
-                                          "responding. Check the cable and power, then start the copy again from the "
-                                          "first screen. It carries on from where it stopped; nothing is lost.")
+                                          "responding. Check the cable and power, plug it back in, then press Resume. "
+                                          "It carries on from where it stopped; nothing is lost.")
                     return
                 self.log(f"ddrescue finished the pass with code {rc}")
                 if rc != 0:
@@ -343,6 +365,17 @@ class ImageJob:
                                              "Your progress is saved. Let it cool for ten minutes, then press Resume.")
                     return
 
+    def _power_now(self):
+        at, cached = self._power
+        now = time.monotonic()
+        if now - at > 10:
+            try:
+                cached = self.system.power_status()
+            except Exception:
+                cached = {"on_battery": False, "percent": None}
+            self._power = (now, cached)
+        return cached
+
     def _auto_pause(self, reason, message):
         with self._lock:
             if self._want or self.state != "running":
@@ -355,6 +388,9 @@ class ImageJob:
 
     def _finish(self, state, message):
         self.log(f"Now {state}" + (f": {message}" if message else ""))
+        if self._inhibit is not None and state != "pausing":
+            self._inhibit.close()
+            self._inhibit = None
         self._map_cache = (0.0, None)
         if self._t0 is not None:
             self._elapsed += max(0.0, self.clock() - self._t0)
@@ -404,6 +440,16 @@ class ImageJob:
         elapsed = self._elapsed + (max(0.0, now - self._t0) if self._t0 is not None else 0.0)
         remaining = max(0, self.size - finished - sums["skipped"])
         eta = remaining / self._speed if self._speed > 0 else None
+        if self.state == "running" and speed:
+            self._speeds.append(speed)  # the raw speeds, so the spread is not smoothed away
+        eta_text = human_duration(eta) if self.state == "running" else "-"
+        if self.state == "running" and len(self._speeds) >= 15 and remaining > 0:
+            ordered = sorted(self._speeds)
+            slow_s, fast_s = ordered[len(ordered) // 4], ordered[(3 * len(ordered)) // 4]
+            if slow_s > 0 and fast_s / slow_s > 1.4:  # the speed is all over the place: say so honestly
+                low, high = remaining / fast_s, remaining / slow_s
+                if human_duration(low) != human_duration(high):
+                    eta_text = f"{human_duration(low)} to {human_duration(high)}"
         keys = self._phase_keys()
         active = keys[min(self.phase_index, len(keys) - 1)]
         phases = []
@@ -433,7 +479,8 @@ class ImageJob:
             "finished": finished, "finished_text": human_size(finished),
             "size": self.size, "size_text": human_size(self.size),
             "speed_text": (human_size(self._speed) + "/s") if self._speed else "-",
-            "eta_text": human_duration(eta) if self.state == "running" else "-",
+            "eta_text": eta_text,
+            "power": self._power_now(),
             "skipped": sums["skipped"], "skipped_text": human_size(sums["skipped"]),
             "complete": sums["finished"] >= self.size and self.size > 0,
             "elapsed_text": human_duration(elapsed) if elapsed >= 60 else ("under a minute" if elapsed > 0 else "-"),

@@ -45,6 +45,23 @@ def network_mount_attempts(kind, address, share, mountpoint, credfile=None):
     raise ValueError(f"unknown kind {kind!r}")
 
 
+class _NoInhibit:
+    def close(self):
+        pass
+
+
+class _Inhibit:
+    def __init__(self, proc):
+        self.proc = proc
+
+    def close(self):
+        try:
+            self.proc.terminate()
+            self.proc.wait(timeout=5)
+        except Exception:
+            pass
+
+
 class System:
     """Real system access (run as root on the rescue USB)."""
 
@@ -97,6 +114,48 @@ class System:
         """Ask the kernel to refuse every write to this drive."""
         rc, _out, err = self.run(["blockdev", "--setro", path], timeout=10)
         return rc == 0, err.strip()
+
+    def is_readonly(self, path):
+        """True when the kernel really is refusing writes to this drive."""
+        rc, out, _err = self.run(["blockdev", "--getro", path], timeout=10)
+        return rc == 0 and out.strip() == "1"
+
+    def power_status(self):
+        """{"on_battery": bool, "percent": int or None}. A desktop with no battery is not on battery."""
+        base = "/sys/class/power_supply"
+        try:
+            names = sorted(os.listdir(base))
+        except OSError:
+            return {"on_battery": False, "percent": None}
+        on_battery, percent, mains_online = False, None, False
+        for name in names:
+            try:
+                with open(os.path.join(base, name, "type")) as fh:
+                    kind = fh.read().strip()
+                if kind == "Mains":
+                    with open(os.path.join(base, name, "online")) as fh:
+                        mains_online = mains_online or fh.read().strip() == "1"
+                elif kind == "Battery":
+                    with open(os.path.join(base, name, "status")) as fh:
+                        status = fh.read().strip()
+                    with open(os.path.join(base, name, "capacity")) as fh:
+                        percent = int(fh.read().strip())
+                    on_battery = on_battery or status == "Discharging"
+            except (OSError, ValueError):
+                continue
+        return {"on_battery": on_battery and not mains_online, "percent": percent}
+
+    def inhibit_sleep(self):
+        """Keep the computer awake (no sleep, no idle, lid closing ignored) until .close() is called."""
+        if not shutil.which("systemd-inhibit"):
+            return _NoInhibit()
+        try:
+            proc = subprocess.Popen(["systemd-inhibit", "--what=sleep:idle:handle-lid-switch", "--who=Drive Rescue",
+                                     "--why=Copying a drive", "--mode=block", "sleep", "infinity"],
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except OSError:
+            return _NoInhibit()
+        return _Inhibit(proc)
 
     def set_readwrite(self, path):
         """Undo set_readonly. Only the clone target is ever made writable again."""

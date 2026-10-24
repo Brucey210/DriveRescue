@@ -113,6 +113,22 @@ class ActionTests(AppCase):
         self.assertIn("SESSION LOG", self.call("GET", "report")["text"])
         self.assertTrue(os.path.exists(os.path.join(os.path.dirname(s["image"]), "DriveRescue-session.log")))
 
+    def test_choosing_more_than_will_fit_is_refused_with_numbers(self):
+        from drive_rescue.recover import Recovery
+        rec = Recovery(self.sys, "x.img", self.sys.root)
+        root = os.path.join(self.sys.root, "fakevol")
+        os.makedirs(os.path.join(root, "d"))
+        with open(os.path.join(root, "d", "big.bin"), "wb") as fh:
+            fh.write(b"x" * 100_000)
+        rec.volumes = [{"id": "0", "name": "V", "mountpoint": root}]
+        self.assertEqual(rec.estimate([{"volume": "0", "rel": "d"}]), 100_000)
+        self.sys.free_bytes = lambda path: 1000
+        with self.assertRaises(server.ApiError) as cm:
+            self.app._check_room(rec, [{"volume": "0", "rel": "d"}], None)
+        self.assertIn("isn't enough room", str(cm.exception))
+        self.sys.free_bytes = lambda path: 10 ** 12
+        self.app._check_room(rec, [{"volume": "0", "rel": "d"}], None)
+
     def test_recover_input_checks(self):
         with self.assertRaises(server.ApiError):
             self.call("POST", "recover/copy", {"items": []})

@@ -447,6 +447,34 @@ class Recovery:
                 return {"kind": "none", "size_text": "", "message": "This file is in a damaged area and can't be read."}
             raise RecoverError(f"This file can't be read: {err.strerror}")
 
+    def estimate(self, items, max_files=200_000, max_seconds=15.0):
+        """Total size in bytes of the chosen files and folders, or None when it takes too long to count."""
+        import time as _time
+        deadline, total, seen = _time.monotonic() + max_seconds, 0, 0
+        for item in items:
+            try:
+                vol = self._volume(item.get("volume"))
+                path = safe_join(vol["mountpoint"], item.get("rel", ""))
+            except RecoverError:
+                continue
+            if os.path.islink(path):
+                continue
+            if os.path.isfile(path):
+                total += os.path.getsize(path)
+                continue
+            for dirpath, _dirs, files in os.walk(path, onerror=lambda e: None):
+                for name in files:
+                    seen += 1
+                    if seen > max_files or _time.monotonic() > deadline:
+                        return None
+                    try:
+                        full = os.path.join(dirpath, name)
+                        if not os.path.islink(full):
+                            total += os.path.getsize(full)
+                    except OSError:
+                        pass
+        return total
+
     # ---- copying out -----------------------------------------------------
     def start_copy(self, items, out_dir=None):
         with self._lock:

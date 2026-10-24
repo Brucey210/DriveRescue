@@ -469,7 +469,7 @@ function healthCard(path, title) {
   return `<details class="adv"><summary>${I.chev}<span>${esc(title)}: details</span><small>${esc(h.label)}</small></summary>
     <div style="padding:2px 18px 14px;display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:8px 24px">
     ${h.details.map(d => `<div style="display:flex;align-items:center;gap:8px"><i style="width:10px;height:10px;border-radius:50%;background:${dot[d.level] || "var(--line2)"};flex:none"></i><span class="muted">${esc(d.k)}</span><b style="margin-left:auto">${esc(d.v)}</b></div>`).join("")}
-    </div></details>`;
+    </div>${h.advice ? `<p class="muted" style="margin:0;padding:0 18px 14px">${esc(h.advice)}</p>` : ""}</details>`;
 }
 function banner(kind, html) {
   const icon = kind === "warn" || kind === "bad" ? I.warn : kind === "plain" ? "" : I.check;
@@ -684,6 +684,8 @@ function paintCopy(s) {
   if (s.state === "paused" && s.quick_done && S.opts.pause_after_quick && !clone)
     note += banner("", "<b>Everything that reads easily is now safe.</b> Press <b>Get my important files</b> to pick what you need first. When you are ready, come back and press Resume to go after the harder parts.");
   if (s.speed_note) note += banner("warn", esc(s.speed_note));
+  if (s.power && s.power.on_battery && (s.state === "running" || s.state === "paused"))
+    note += banner("warn", `This computer is running on its battery${s.power.percent != null ? " (" + s.power.percent + "%)" : ""}. Plug it in, or it could switch off part way through.`);
   $("#cNotice").innerHTML = note ? `<div style="display:flex;flex-direction:column;gap:8px">${note}</div>` : "";
   $("#cPct").textContent = `${s.percent}%`;
   $("#cAmount").textContent = s.size_text ? `${s.finished_text} of ${s.size_text}` : "";

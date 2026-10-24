@@ -66,6 +66,16 @@ class FakeSystem(System):
     def dm_remove(self, name):
         self.calls.append(("dm_remove", name))
 
+    def is_readonly(self, path):
+        return True
+
+    def power_status(self):
+        return getattr(self, "power", {"on_battery": False, "percent": None})
+
+    def inhibit_sleep(self):
+        self.calls.append(("inhibit",))
+        return type("Held", (), {"close": lambda me: self.calls.append(("uninhibit",))})()
+
     def close_kiosk(self):
         self.kiosk_closed = True
 

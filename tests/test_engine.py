@@ -471,6 +471,63 @@ class JobTests(Base):
         plain = self.job()
         self.assertNotIn("reverse", [p["key"] for p in plain.snapshot()["phases"]])
 
+    # ---- extra care
+    def test_health_advice_is_plain_and_matches_the_verdict(self):
+        h = drives.check_health(self.fs, self.fs.source_file)
+        self.assertEqual(h["status"], "failing")
+        self.assertIn("failing", h["advice"])
+        self.assertIn("can no longer read", h["advice"])
+        self.assertIn("didn't report", drives.check_health(self.fs, "/dev/nothing")["advice"])
+
+    def test_the_time_left_becomes_a_range_when_the_speed_is_all_over_the_place(self):
+        job = self.job()
+        job.size = 10 ** 13
+        job.state = "running"
+        job._t0 = job.clock()
+        for i in range(30):
+            job._live["rate"] = 100e6 if i % 2 else 5e6
+            snap = job.snapshot()
+        self.assertIn(" to ", snap["eta_text"])
+        job2 = self.job()
+        job2.size = 10 ** 13
+        job2.state = "running"
+        job2._t0 = job2.clock()
+        for _ in range(30):
+            job2._live["rate"] = 50e6
+            snap2 = job2.snapshot()
+        self.assertNotIn(" to ", snap2["eta_text"])
+
+    def test_the_log_confirms_the_failing_drive_was_locked_and_sleep_is_blocked(self):
+        lines = []
+        job = ImageJob(self.fs, self.plan, {"retries": 0}, cells=self.blocks, log=lines.append)
+        job.start()
+        self.assertEqual(wait_for(job, self.TERMINAL), "done")
+        self.assertIn("locked as read-only", "\n".join(lines))
+        self.assertIn(("inhibit",), self.fs.calls)
+        self.assertIn(("uninhibit",), self.fs.calls)
+
+    def test_battery_use_is_reported(self):
+        job = self.job()
+        self.fs.power = {"on_battery": True, "percent": 41}
+        self.assertEqual(job.snapshot()["power"], {"on_battery": True, "percent": 41})
+
+    def test_a_drive_that_comes_back_under_a_new_name_is_found_again(self):
+        job = self.job()
+        job.start()
+        wait_for(job, self.TERMINAL)
+        job.state = "paused"
+        real = self.fs.lsblk
+
+        def renamed():
+            devs = real()
+            devs[0] = {**devs[0], "path": "/dev/fake-sdz", "name": "sdz"}
+            return devs
+        self.fs.lsblk = renamed
+        job.resume()
+        self.assertEqual(job.plan["source"]["path"], "/dev/fake-sdz")
+        self.assertIn(("setro", "/dev/fake-sdz"), self.fs.calls)  # the new name is locked read-only too
+        job.state = "done"
+
     # ---- safety while copying
     def test_resume_refuses_a_different_drive(self):
         os.environ["FAKE_DELAY"] = "0.05"
