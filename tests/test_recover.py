@@ -146,3 +146,259 @@ class FakeToolTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DamageCheckTests(unittest.TestCase):
+    """Unrecovered parts of the copy must show up as damaged files, never as silent blanks."""
+
+    def test_the_table_turns_unrecovered_parts_into_errors(self):
+        table, bad = recover.damage_table([(0, 1024, "+"), (1024, 512, "-"), (1536, 2560, "+")], 0, 4096, "/dev/x")
+        self.assertEqual(table.split("\n")[:3], ["0 2 linear /dev/x 0", "2 1 error", "3 5 linear /dev/x 3"])
+        self.assertEqual(bad, 512)
+
+    def test_nothing_missing_means_nothing_to_hide(self):
+        table, bad = recover.damage_table([(0, 4096, "+")], 0, 4096, "d")
+        self.assertEqual((table.strip(), bad), ("0 8 linear d 0", 0))
+
+    def test_good_areas_shrink_and_bad_areas_grow_to_whole_sectors(self):
+        table, bad = recover.damage_table([(0, 1000, "+")], 0, 2048, "d")  # 1000 bytes is not a whole sector
+        self.assertEqual(table.strip().split("\n"), ["0 1 linear d 0", "1 3 error"])
+        self.assertEqual(bad, 1536)
+
+    def test_a_partition_inside_the_image_is_measured_from_its_own_start(self):
+        table, bad = recover.damage_table([(4096, 4096, "+")], 2048, 4096, "d")
+        self.assertEqual(table.strip().split("\n"), ["0 4 error", "4 4 linear d 4"])
+        self.assertEqual(bad, 2048)
+
+    def test_untried_gaps_count_as_missing(self):
+        _table, bad = recover.damage_table([(0, 1024, "+")], 0, 4096, "d")
+        self.assertEqual(bad, 3072)
+
+    def _fake(self, tmp, mapfile_text):
+        calls = []
+
+        class Sys(System):
+            def attach_image(self, image):
+                return "/dev/loop9", ""
+
+            def detach_image(self, loop):
+                calls.append(("detach", loop))
+
+            def lsblk(self):
+                return [{"path": "/dev/loop9", "name": "loop9", "children": [
+                    {"path": "/dev/loop9p1", "name": "loop9p1", "type": "part", "fstype": "ext4",
+                     "label": "Family", "size": 4096}]}]
+
+            def partition_offset(self, path):
+                return 0
+
+            def mount(self, device, mountpoint, fstype=None, read_only=False):
+                calls.append(("mount", device))
+                os.makedirs(mountpoint, exist_ok=True)
+                return True, ""
+
+            def umount(self, mountpoint):
+                return True, ""
+
+            def dm_create(self, name, table):
+                calls.append(("dm_create", name))
+                return "/dev/mapper/" + name, ""
+
+            def dm_remove(self, name):
+                calls.append(("dm_remove", name))
+
+        mf = os.path.join(tmp, "m.map")
+        open(mf, "w").write(mapfile_text)
+        return Sys(), mf, calls
+
+    def test_a_copy_with_missing_parts_is_opened_through_the_error_view(self):
+        tmp = tempfile.mkdtemp()
+        old, recover.MOUNT_ROOT = recover.MOUNT_ROOT, os.path.join(tmp, "mnt")
+        try:
+            sysm, mf, calls = self._fake(tmp, "0x0 + 1\n0x0 1024 +\n1024 3072 -\n")
+            rec = recover.Recovery(sysm, "x.img", tmp, mf)
+            info = rec.open()
+            self.assertTrue(info["readable"])
+            self.assertFalse(info["unchecked"])
+            self.assertIn(("mount", "/dev/mapper/dr-image-%d-0" % os.getpid()), calls)
+            self.assertEqual(rec.volumes[0]["damaged_bytes"], 3072)
+            rec.close()
+            self.assertIn(("dm_remove", "dr-image-%d-0" % os.getpid()), calls)
+        finally:
+            recover.MOUNT_ROOT = old
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_a_complete_copy_is_opened_plainly(self):
+        tmp = tempfile.mkdtemp()
+        old, recover.MOUNT_ROOT = recover.MOUNT_ROOT, os.path.join(tmp, "mnt")
+        try:
+            sysm, mf, calls = self._fake(tmp, "0x0 + 1\n0x0 4096 +\n")
+            rec = recover.Recovery(sysm, "x.img", tmp, mf)
+            rec.open()
+            self.assertIn(("mount", "/dev/loop9p1"), calls)
+            self.assertFalse([c for c in calls if c[0] == "dm_create"])
+            self.assertEqual(rec.volumes[0]["damage_check"], True)
+        finally:
+            recover.MOUNT_ROOT = old
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_when_the_check_cannot_be_set_up_the_person_is_told(self):
+        tmp = tempfile.mkdtemp()
+        old, recover.MOUNT_ROOT = recover.MOUNT_ROOT, os.path.join(tmp, "mnt")
+        try:
+            sysm, mf, calls = self._fake(tmp, "0x0 + 1\n0x0 1024 +\n1024 3072 -\n")
+            sysm.dm_create = lambda name, table: (None, "no dmsetup")
+            rec = recover.Recovery(sysm, "x.img", tmp, mf)
+            self.assertTrue(rec.open()["unchecked"])
+        finally:
+            recover.MOUNT_ROOT = old
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_a_file_with_unreadable_pieces_is_kept_but_flagged(self):
+        import errno
+        tmp = tempfile.mkdtemp()
+        try:
+            src, dst = os.path.join(tmp, "src.bin"), os.path.join(tmp, "out", "dst.bin")
+            with open(src, "wb") as fh:
+                fh.write(b"A" * (3 * 4096))
+            rec = recover.Recovery(System(), "x.img", tmp)
+            rec.task = {"kind": "copy", "state": "running", "copied": 0, "bytes": 0, "failed": [],
+                        "current": "", "message": "", "damaged": []}
+            real = os.pread
+
+            def flaky(fd, n, off):
+                if off <= 4096 < off + n:  # the second 4 KB piece sits in a damaged area
+                    if n > 4096:
+                        raise OSError(errno.EIO, "io")
+                    if off == 4096:
+                        raise OSError(errno.EIO, "io")
+                return real(fd, n, off)
+            os.pread = flaky
+            try:
+                rec._copy_one(src, dst)
+            finally:
+                os.pread = real
+            data = open(dst, "rb").read()
+            self.assertEqual(len(data), 3 * 4096)
+            self.assertEqual(data[:4096], b"A" * 4096)
+            self.assertEqual(data[4096:8192], b"\0" * 4096)
+            self.assertEqual(data[8192:], b"A" * 4096)
+            self.assertEqual(rec.task["damaged"][0]["bad_bytes"], 4096)
+            self.assertEqual(rec.task["copied"], 1)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_a_file_that_cannot_be_read_at_all_is_not_kept(self):
+        import errno
+        tmp = tempfile.mkdtemp()
+        try:
+            src, dst = os.path.join(tmp, "src.bin"), os.path.join(tmp, "out", "dst.bin")
+            open(src, "wb").write(b"A" * 8192)
+            rec = recover.Recovery(System(), "x.img", tmp)
+            rec.task = {"kind": "copy", "state": "running", "copied": 0, "bytes": 0, "failed": [],
+                        "current": "", "message": "", "damaged": []}
+            real = os.pread
+            os.pread = lambda fd, n, off: (_ for _ in ()).throw(OSError(errno.EIO, "io"))
+            try:
+                with self.assertRaises(OSError):
+                    rec._copy_one(src, dst)
+            finally:
+                os.pread = real
+            self.assertFalse(os.path.exists(dst))
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
+class ProtectedSectionTests(unittest.TestCase):
+    """BitLocker and LUKS sections are listed as locked, and open with the right password."""
+
+    def make(self, tmp, kind="BitLocker"):
+        calls = []
+
+        class Sys(System):
+            def attach_image(self, image):
+                return "/dev/loop9", ""
+
+            def detach_image(self, loop):
+                calls.append(("detach", loop))
+
+            def lsblk(self):
+                return [{"path": "/dev/loop9", "name": "loop9", "children": [
+                    {"path": "/dev/loop9p1", "name": "loop9p1", "type": "part", "fstype": kind, "label": "",
+                     "size": 4096}]}]
+
+            def probe(self, path):
+                return {"TYPE": "ntfs", "LABEL": "Work"} if path.startswith("/dev/mapper/") else {}
+
+            def mount(self, device, mountpoint, fstype=None, read_only=False):
+                calls.append(("mount", device, fstype))
+                os.makedirs(mountpoint, exist_ok=True)
+                return True, ""
+
+            def umount(self, mountpoint):
+                return True, ""
+
+            def crypt_open(self, device, name, password, kind_):
+                calls.append(("crypt_open", device, kind_))
+                if password != "s3cret":
+                    return None, "That password didn't work. Check it and try again."
+                return "/dev/mapper/" + name, ""
+
+            def crypt_close(self, name):
+                calls.append(("crypt_close", name))
+        return Sys(), calls
+
+    def test_a_protected_section_is_listed_then_opens_with_the_password(self):
+        tmp = tempfile.mkdtemp()
+        old, recover.MOUNT_ROOT = recover.MOUNT_ROOT, os.path.join(tmp, "mnt")
+        try:
+            sysm, calls = self.make(tmp)
+            rec = recover.Recovery(sysm, "x.img", tmp)
+            info = rec.open()
+            self.assertFalse(info["readable"])
+            self.assertEqual([(x["kind"], x["id"]) for x in info["locked"]], [("BitLocker", "0")])
+            self.assertNotIn("device", info["locked"][0])
+            with self.assertRaises(recover.RecoverError) as cm:
+                rec.unlock("0", "wrong")
+            self.assertIn("didn't work", str(cm.exception))
+            self.assertFalse(rec.volumes)
+            info = rec.unlock("0", "s3cret")
+            self.assertTrue(info["readable"])
+            self.assertEqual(info["locked"], [])
+            self.assertEqual(info["volumes"][0]["name"], "Work")
+            self.assertIn(("mount", "/dev/mapper/dr-crypt-%d-0" % os.getpid(), "ntfs"), calls)
+            rec.close()
+            self.assertIn(("crypt_close", "dr-crypt-%d-0" % os.getpid()), calls)
+        finally:
+            recover.MOUNT_ROOT = old
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_luks_is_recognised_and_an_empty_password_is_refused(self):
+        tmp = tempfile.mkdtemp()
+        old, recover.MOUNT_ROOT = recover.MOUNT_ROOT, os.path.join(tmp, "mnt")
+        try:
+            sysm, _calls = self.make(tmp, "crypto_LUKS")
+            rec = recover.Recovery(sysm, "x.img", tmp)
+            self.assertEqual(rec.open()["locked"][0]["kind"], "LUKS")
+            with self.assertRaises(recover.RecoverError):
+                rec.unlock("0", "")
+            with self.assertRaises(recover.RecoverError):
+                rec.unlock("9", "s3cret")
+        finally:
+            recover.MOUNT_ROOT = old
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_the_password_never_goes_on_the_command_line(self):
+        seen = {}
+
+        class Spy(System):
+            def run(self, cmd, timeout=30, input_text=None):
+                seen["cmd"], seen["input"] = cmd, input_text
+                return 2, "", "No key available with this passphrase."
+        path, err = Spy().crypt_open("/dev/x", "n", "hunter2", "BitLocker")
+        self.assertIsNone(path)
+        self.assertIn("didn't work", err)
+        self.assertNotIn("hunter2", " ".join(seen["cmd"]))
+        self.assertEqual(seen["input"], "hunter2")
+        self.assertIn("bitlk", seen["cmd"])
+        self.assertIn("--readonly", seen["cmd"])

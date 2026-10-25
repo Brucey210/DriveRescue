@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Drive Rescue</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 128 128'><defs><linearGradient id='drt' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%2317A9A1'/><stop offset='1' stop-color='%230A6560'/></linearGradient></defs><rect x='4' y='4' width='120' height='120' rx='30' fill='url(%23drt)'/><circle cx='64' cy='64' r='33' fill='none' stroke='%23FFFFFF' stroke-width='24'/><circle cx='64' cy='64' r='33' fill='none' stroke='%23E8A63A' stroke-width='24' stroke-dasharray='25.9 25.9' transform='rotate(22.5 64 64)'/><circle cx='64' cy='64' r='21' fill='%230A5C58'/><circle cx='64' cy='64' r='6' fill='%23FFFFFF'/><circle cx='64' cy='64' r='2.2' fill='%230A5C58'/></svg>">
 <script>(function(){var t;try{t=localStorage.getItem('dr-theme')}catch(e){}if(t!=='light'&&t!=='dark')t=(window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';document.documentElement.dataset.theme=t})();</script>
 <style>
 :root{
@@ -31,7 +32,9 @@ button,input,select{font:inherit;color:inherit}
 .app{max-width:1040px;margin:0 auto;width:100%;flex:1;display:flex;flex-direction:column}
 header{display:flex;align-items:center;justify-content:space-between;padding:22px 40px 0}
 .brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:1.0625rem}
-.logo{width:32px;height:32px;border-radius:9px;background:var(--accent);color:var(--on-accent);display:flex;align-items:center;justify-content:center}
+.logo{width:32px;height:32px;display:flex}.logo svg{width:100%;height:100%}
+#splash{position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;background:radial-gradient(ellipse at 50% 40%,#12767a 0%,#0a3f44 55%,#06272b 100%);color:#fff;transition:opacity .5s}
+#splash svg{width:116px;height:116px;filter:drop-shadow(0 10px 30px rgba(0,0,0,.35))}#splash b{font-size:2rem;letter-spacing:.2px}#splash span{opacity:.75;font-size:1rem}#splash.gone{opacity:0;pointer-events:none}
 #stepLabel{font-size:0.8125rem;color:var(--muted)}
 nav{display:flex;gap:10px;padding:16px 40px 0}
 nav div{flex:1;display:flex;flex-direction:column;gap:8px;font-size:0.875rem;color:var(--muted);font-weight:500}
@@ -71,6 +74,11 @@ footer .grp{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
 .drive.off{background:var(--off-bg);border-color:var(--off-line);cursor:not-allowed}
 .drive input{width:22px;height:22px;margin:0;accent-color:var(--accent)}
 .ico{display:flex;color:var(--muted)}
+.ico.thm{width:40px;height:40px;align-items:center;justify-content:center}.ico.thm img{width:40px;height:40px;object-fit:cover;border-radius:6px;border:1px solid var(--line)}
+.finder{display:flex;gap:10px;flex-wrap:wrap}.finder input[type=search]{flex:1;min-width:200px;min-height:44px;padding:0 14px;border-radius:10px;border:1.5px solid var(--line2);background:var(--surface)}
+.finder select{min-height:44px;padding:0 12px;border-radius:10px;border:1.5px solid var(--line2);background:var(--surface)}
+.entry small.where{display:block;overflow:hidden;text-overflow:ellipsis}.destrow{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}
+.destrow label{display:flex;flex-direction:column;gap:6px;font-size:0.8125rem;font-weight:600}.destrow select,.destrow input{min-height:44px;padding:0 12px;border-radius:10px;border:1.5px solid var(--line2);background:var(--surface)}
 .drive.on .ico{color:var(--accent)}
 .txt{flex:1;min-width:0;display:flex;flex-direction:column}
 .txt b{font-size:0.9375rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -173,10 +181,12 @@ details.adv[open] summary svg{transform:rotate(90deg)}
 </style>
 </head>
 <body>
+<div id="splash" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><defs><linearGradient id="drs" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#17A9A1"/><stop offset="1" stop-color="#0A6560"/></linearGradient></defs><rect x="4" y="4" width="120" height="120" rx="30" fill="url(#drs)"/><circle cx="64" cy="64" r="33" fill="none" stroke="#FFFFFF" stroke-width="24"/><circle cx="64" cy="64" r="33" fill="none" stroke="#E8A63A" stroke-width="24" stroke-dasharray="25.9 25.9" transform="rotate(22.5 64 64)"/><circle cx="64" cy="64" r="21" fill="#0A5C58"/><circle cx="64" cy="64" r="6" fill="#FFFFFF"/><circle cx="64" cy="64" r="2.2" fill="#0A5C58"/></svg><b>Drive Rescue</b><span>Rescue your files. Clone your drive.</span></div>
 <div class="page"><div class="app">
   <header>
     <div class="brand"><div class="logo" id="logo"></div><span>Drive Rescue</span></div>
     <div class="tools"><span id="stepLabel" style="margin-right:10px"></span>
+      <button type="button" class="tbtn pw" data-act="desktop" hidden title="Close this window and show the Linux desktop">Desktop</button>
       <button type="button" class="tbtn pw" data-act="reboot" hidden>Restart</button>
       <button type="button" class="tbtn pw" data-act="poweroff" hidden>Shut down</button>
       <button type="button" class="tbtn" data-act="theme" aria-label="Switch between light and dark" title="Light / dark">&#9680;</button>
@@ -195,6 +205,7 @@ const TOKEN = "__TOKEN__";
 const NAV = {
   rescue: [[1, "Welcome"], [2, "Choose drives"], [3, "Copy"], [4, "Recover files"], [5, "Done"]],
   clone: [[1, "Welcome"], [2, "Choose drives"], [3, "Clone"], [5, "Done"]],
+  browse: [[1, "Welcome"], [2, "Find your copy"], [4, "Recover files"], [5, "Done"]],
 };
 const FAT_LIMIT = 4 * 1024 ** 3 - 1;
 const svg = (d, w = 20) => `<svg width="${w}" height="${w}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
@@ -227,6 +238,7 @@ try { S.sound = localStorage.getItem("dr-sound") !== "0"; } catch (e) { /* fine 
 const TIPS = {
   image: "An image file is an exact copy of the whole failing drive, saved as one big file on the healthy drive. Your files are then recovered from that copy, so the failing drive is read as little as possible.",
   style: "Gentle reads in small pieces, so a bad spot costs less of the drive. Fast is quicker, and suits a drive that is only slightly damaged.",
+  thorough: "After the retry passes, goes over what is still missing once more, from the other end of each damaged area. It can win back a little more data on a badly damaged drive, but takes extra time and puts more strain on it.",
   retries: "After the quick copy, the program goes back over the parts it skipped and tries again, slowly. More passes can win back more data, but take longer and put the drive under more strain.",
   priority: "A failing drive can get worse the longer it runs. With this on, the copy pauses once everything that reads easily is safe, so you can get your most important files out before the slow, harder part begins.",
   skipped: "Areas that are hard to read are skipped on the first pass, so the easy data is saved first. The program comes back to them later.",
@@ -250,7 +262,7 @@ async function api(path, body) {
 
 // ------------------------------------------------------------------ frame
 function chrome() {
-  $("#logo").innerHTML = I.logo;
+  $("#logo").innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><defs><linearGradient id="drt" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#17A9A1"/><stop offset="1" stop-color="#0A6560"/></linearGradient></defs><rect x="4" y="4" width="120" height="120" rx="30" fill="url(#drt)"/><circle cx="64" cy="64" r="33" fill="none" stroke="#FFFFFF" stroke-width="24"/><circle cx="64" cy="64" r="33" fill="none" stroke="#E8A63A" stroke-width="24" stroke-dasharray="25.9 25.9" transform="rotate(22.5 64 64)"/><circle cx="64" cy="64" r="21" fill="#0A5C58"/><circle cx="64" cy="64" r="6" fill="#FFFFFF"/><circle cx="64" cy="64" r="2.2" fill="#0A5C58"/></svg>';
   const nav = NAV[S.mode], at = nav.findIndex(x => x[0] === S.step);
   $("#stepLabel").textContent = `Step ${at + 1} of ${nav.length}`;
   $("#steps").innerHTML = nav.map(([id, t], i) => {
@@ -263,11 +275,11 @@ function go(step) {
   stopTimers();
   S.step = step;
   chrome();
-  ({ 1: viewWelcome, 2: viewDrives, 3: viewCopy, 4: viewRecover, 5: viewDone })[step]();
+  ({ 1: viewWelcome, 2: S.mode === "browse" ? viewImages : viewDrives, 3: viewCopy, 4: viewRecover, 5: viewDone })[step]();
   window.scrollTo(0, 0);
 }
 const btn = (act, label, cls = "", extra = "") => `<button type="button" class="btn ${cls}" data-act="${act}" ${extra}>${label}</button>`;
-const lockText = () => S.mode === "clone" ? "The original drive is only ever read, never written to" : "The failing drive is only ever read, never written to";
+const lockText = () => S.mode === "clone" ? "The original drive is only ever read, never written to" : S.mode === "browse" ? "Your saved copy is only ever read, never written to" : "The failing drive is only ever read, never written to";
 const lockNote = { toString() { return `<span class="note">${I.lock}${lockText()}</span>`; } };
 const ZOOMS = [1, 1.15, 1.3, 1.5];
 function setZoom(i) {
@@ -346,6 +358,10 @@ function viewWelcome() {
         <p>Copy a working drive, including Windows and everything on it, onto a larger drive, and use all of the extra space. The bigger drive is erased.</p>
         <span class="go">Clone a drive ${I.arrow}</span></button>
     </div>
+    <button type="button" class="choice" data-act="mode" data-mode="browse" style="flex-direction:row;align-items:center;gap:16px">
+      <span class="num">${I.file}</span><span style="flex:1"><b>Browse a saved copy</b>
+      <p style="margin:4px 0 0">Already made a copy of a failing drive? Open it to look through the files and recover the ones you need, without touching the failing drive.</p></span>
+      <span class="go">Open a copy ${I.arrow}</span></button>
     <div id="pre"></div>
     <div class="banner plain"><span>Not sure? If the drive is clicking, very slow, or has lost files, choose <b>Rescue files</b>. It copes with read errors. Cloning is only for drives that are working properly.</span></div>`;
   footer(`<span class="note">${I.lock}Nothing is written to any drive until you confirm</span>`, "");
@@ -381,6 +397,7 @@ function viewDrives() {
       <div class="fields">
         <label><span>Copy style ${tip("style")}</span><select id="optStyle"><option value="gentle">Gentle (recommended)</option><option value="fast">Fast</option></select></label>
         <label><span>Retry passes ${tip("retries")}</span><input id="optRetries" type="number" min="0" max="10"></label>
+        <label class="opt"><span><input type="checkbox" id="optThorough" ${S.opts.thorough ? "checked" : ""}> Also try reading backwards ${tip("thorough")}</span></label>
         <label>Folder on the healthy drive<input id="optFolder" type="text" maxlength="60"></label>
       </div>
     </details>`;
@@ -394,7 +411,7 @@ function viewDrives() {
 }
 function advHint() {
   const el = $("#advHint");
-  if (el) el.textContent = `${S.opts.style === "fast" ? "Fast" : "Gentle"} copy · ${S.opts.retries} retry passes · folder ${S.folder || "DriveRescue"}${S.opts.pause_after_quick ? " · pause after quick copy" : ""}`;
+  if (el) el.textContent = `${S.opts.style === "fast" ? "Fast" : "Gentle"} copy · ${S.opts.retries} retry passes · folder ${S.folder || "DriveRescue"}${S.opts.pause_after_quick ? " · pause after quick copy" : ""}${S.opts.thorough ? " · backwards retry" : ""}`;
 }
 function row(kind, value, checked, disabled, title, meta, tag) {
   return `<label class="drive ${checked ? "on" : ""} ${disabled ? "off" : ""}">
@@ -405,6 +422,7 @@ function row(kind, value, checked, disabled, title, meta, tag) {
 }
 function lists() {
   if (S.mode === "clone") return cloneLists();
+  if (S.mode === "browse") return imgLists();
   const src = S.drives.find(d => d.path === S.source);
   const driveMeta = d => `${d.size_text} · ${d.kind}${d.transport ? " · " + d.transport : ""}`;
   $("#srcList").innerHTML = S.drives.length ? S.drives.map(d => {
@@ -430,10 +448,10 @@ function netBoxPaint() {
   const el = $("#netBox");
   if (!el || S.mode === "clone") return;
   if (S.net) { el.innerHTML = `<div class="row2"><span class="muted">Saving over the network to ${esc(S.net.label)}</span>${btn("netDisconnect", "Disconnect", "quiet")}</div>`; return; }
-  if (!S.netOpen) { el.innerHTML = btn("netOpen", "Save to a network folder instead…", "quiet"); return; }
+  if (!S.netOpen) { el.innerHTML = btn("netOpen", S.step === 4 ? "Save to a network folder…" : S.mode === "browse" ? "Open a copy from a network folder…" : "Save to a network folder instead…", "quiet"); return; }
   const f = S.netForm, nfs = f.kind === "nfs";
   el.innerHTML = `<div class="card" style="display:flex;flex-direction:column;gap:12px">
-    <h2 style="margin:0">Save to a network folder ${tip("network")}</h2>
+    <h2 style="margin:0">${S.mode === "browse" && S.step === 2 ? "Connect to a network folder" : "Save to a network folder"} ${tip("network")}</h2>
     <div class="netform">
       <label>Type<select id="netKind"><option value="smb" ${nfs ? "" : "selected"}>Windows share (SMB)</option><option value="nfs" ${nfs ? "selected" : ""}>NFS share</option></select></label>
       <label>Computer name or address<input id="netAddr" type="text" value="${esc(f.address)}" placeholder="nas.local or 192.168.1.20" autocomplete="off" spellcheck="false"></label>
@@ -451,11 +469,27 @@ function healthCard(path, title) {
   return `<details class="adv"><summary>${I.chev}<span>${esc(title)}: details</span><small>${esc(h.label)}</small></summary>
     <div style="padding:2px 18px 14px;display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:8px 24px">
     ${h.details.map(d => `<div style="display:flex;align-items:center;gap:8px"><i style="width:10px;height:10px;border-radius:50%;background:${dot[d.level] || "var(--line2)"};flex:none"></i><span class="muted">${esc(d.k)}</span><b style="margin-left:auto">${esc(d.v)}</b></div>`).join("")}
-    </div></details>`;
+    </div>${h.advice ? `<p class="muted" style="margin:0;padding:0 18px 14px">${esc(h.advice)}</p>` : ""}</details>`;
 }
 function banner(kind, html) {
   const icon = kind === "warn" || kind === "bad" ? I.warn : kind === "plain" ? "" : I.check;
   return `<div class="banner ${kind}" role="${kind === "bad" ? "alert" : "status"}">${icon}<span>${html}</span></div>`;
+}
+function checklist(p) {
+  const items = (p && p.checklist) || [];
+  if (!items.length) return "";
+  return `<details class="adv" ${items.some(i => !i.ok) ? "open" : ""}><summary>${I.chev}<span>Before you start</span><small>${items.every(i => i.ok) ? "All good" : "Something needs a look"}</small></summary>
+    <div style="padding:2px 18px 14px;display:flex;flex-direction:column;gap:8px">${items.map(i => `<div style="display:flex;gap:10px;align-items:flex-start"><i style="margin-top:6px;width:10px;height:10px;border-radius:50%;flex:none;background:${i.ok ? "var(--ok-ink)" : "var(--amber)"}"></i><span>${esc(i.text)}</span></div>`).join("")}</div></details>`;
+}
+function readTest() {
+  if (!S.source) return "";
+  const a = (S.assess || {})[S.source];
+  const tag = { good: "ok", fair: "warn", poor: "warn", bad: "bad" };
+  const names = { good: "Looks healthy", fair: "Starting to struggle", poor: "Struggling", bad: "In poor shape" };
+  const body = !a ? "" : a.loading ? `<p class="muted" style="margin:10px 0 0">Reading… this takes up to 25 seconds.</p>`
+    : a.error ? `<div style="margin-top:10px">${banner("bad", esc(a.error))}</div>`
+    : `<p style="margin:10px 0 0"><span class="tag ${tag[a.rating]}">${names[a.rating]}</span> <span class="muted">${a.total - a.hung - a.errors - a.slow} of ${a.total} spots read fine, ${a.slow} slow, ${a.errors + a.hung} failed</span></p><p class="muted" style="margin:6px 0 0">${esc(a.text)}</p>`;
+  return `<div class="card"><div class="row2"><div><b>Quick read test</b><br><span class="muted">Reads 40 small spots across the drive to judge how it is doing. Optional. It only reads.</span></div>${btn("assess", "Run the test", "", a && a.loading ? "disabled" : "")}</div>${body}</div>`;
 }
 function notice() {
   if (S.mode === "clone") return cloneNotice();
@@ -477,6 +511,8 @@ function notice() {
     }
   }
   html += healthCard(S.source, S.mode === "clone" ? "Drive to copy" : "Failing drive");
+  if (p && p.ok) html += checklist(p);
+  html += readTest();
   el.innerHTML = html ? `<div style="display:flex;flex-direction:column;gap:8px">${html}</div>` : "";
 }
 function drivesFooter() {
@@ -486,6 +522,7 @@ function drivesFooter() {
 }
 let planTimer;
 function schedulePlan() {
+  if (S.mode === "browse") return;
   clearTimeout(planTimer);
   S.plan = null; notice(); drivesFooter();
   if (!S.source || !S.dest) return;
@@ -507,6 +544,7 @@ async function loadDrives() {
     if (S.dest && S.dest !== "network" && !S.drives.some(d => S.mode === "clone" ? d.path === S.dest : d.partitions.some(p => p.path === S.dest))) S.dest = "";
   } catch (e) { S.drives = []; S.loadError = e.message; }
   if (S.step === 2) { lists(); schedulePlan(); }
+  if (S.mode === "browse") return;
   for (const d of S.drives) {
     if (d.is_boot || S.health[d.path]) continue;
     api("health?path=" + encodeURIComponent(d.path))
@@ -573,12 +611,14 @@ function cloneNotice() {
     }
   }
   html += healthCard(S.source, "Drive to copy");
+  if (p && p.ok) html += checklist(p);
   el.innerHTML = html ? `<div style="display:flex;flex-direction:column;gap:8px">${html}</div>` : "";
   if (box) {
     const show = p && p.ok;
     if (show && !box.firstChild) {
       box.innerHTML = `<label class="confirm">Type <b>ERASE</b> to confirm
-        <input id="confirmText" type="text" autocomplete="off" spellcheck="false" placeholder="ERASE"></label>`;
+        <input id="confirmText" type="text" autocomplete="off" spellcheck="false" placeholder="ERASE"></label>
+        <label class="opt" style="margin-top:10px"><input type="checkbox" id="optVerifyClone" ${S.verifyClone !== false ? "checked" : ""}><span>Check the clone afterwards<small>Reads both drives again and compares them. Takes about as long as the copy, and catches a faulty new drive.</small></span></label>`;
       $("#confirmText").value = S.confirm;
     } else if (!show) box.innerHTML = "";
   }
@@ -645,7 +685,7 @@ function paintCopy(s) {
     return;
   }
   const clone = s.mode === "clone";
-  const titles = { running: clone ? "Cloning your drive" : "Copying your drive", pausing: "Pausing…", paused: "Paused", finishing: "Using the extra space",
+  const titles = { running: clone ? "Cloning your drive" : "Copying your drive", pausing: "Pausing…", paused: "Paused", finishing: s.stage === "verify" ? "Checking the copy" : "Using the extra space",
     done: clone ? "Clone finished" : "Copy finished", stopped: "Stopped", error: clone ? "The clone stopped" : "The copy stopped", idle: "Getting ready…" };
   $("#cTitle").textContent = titles[s.state] || "Copying your drive";
   let sub = clone ? "Keep the computer on and the drives plugged in. Don't unplug either drive until this finishes."
@@ -664,6 +704,13 @@ function paintCopy(s) {
   if (s.state === "paused" && s.quick_done && S.opts.pause_after_quick && !clone)
     note += banner("", "<b>Everything that reads easily is now safe.</b> Press <b>Get my important files</b> to pick what you need first. When you are ready, come back and press Resume to go after the harder parts.");
   if (s.speed_note) note += banner("warn", esc(s.speed_note));
+  if (s.verify && s.state === "done") {
+    const v = s.verify;
+    note += v.different.length ? banner("bad", `<b>The copy does not match the drive in ${v.different.length} of ${v.checked + v.unreadable} spots checked.</b> The cable, the port or the healthy drive may be at fault. Try the copy again, with another cable if possible.`)
+      : v.checked ? banner("", `Checked ${v.checked} spread-out spots of the copy against the drive. All matched.${v.unreadable ? ` (${v.unreadable} couldn't be read a second time.)` : ""}`) : "";
+  }
+  if (s.power && s.power.on_battery && (s.state === "running" || s.state === "paused"))
+    note += banner("warn", `This computer is running on its battery${s.power.percent != null ? " (" + s.power.percent + "%)" : ""}. Plug it in, or it could switch off part way through.`);
   $("#cNotice").innerHTML = note ? `<div style="display:flex;flex-direction:column;gap:8px">${note}</div>` : "";
   $("#cPct").textContent = `${s.percent}%`;
   $("#cAmount").textContent = s.size_text ? `${s.finished_text} of ${s.size_text}` : "";
@@ -697,12 +744,126 @@ function copyFooter(s) {
   if ($("#footer").dataset.sig !== left + right) { footer(left, right); $("#footer").dataset.sig = left + right; }
 }
 
+// ------------------------------------------------------- step 2 (browse a saved copy)
+function viewImages() {
+  $("#main").innerHTML = `<div><h1>Where is your saved copy?</h1><p class="sub">Choose the drive the copy was saved on. Nothing on it is changed while you look.</p></div>
+    <div class="cols"><div class="col" role="radiogroup" aria-label="Drive with the copy"><div class="eyebrow"><b>LOOK ON</b><span>The drive or network folder holding your copy</span></div><div id="dstList"></div><div id="netBox"></div></div>
+    <div class="col"><div class="eyebrow"><b>COPIES FOUND</b><span>Pick one to open</span></div><div id="imgList"></div></div></div>`;
+  footer(`${btn("back", "Back")}${lockNote}`, btn("rescan", "Rescan", "quiet"));
+  netBoxPaint(); imgLists(); imgPaint();
+  api("drives").then(r => { S.drives = r.drives; S.loadError = ""; if (S.step === 2 && S.mode === "browse") imgLists(); })
+    .catch(e => { S.loadError = e.message; imgLists(); });
+  if (S.where) findImages();
+}
+function imgLists() {
+  const el = $("#dstList"); if (!el) return;
+  let html = "";
+  for (const d of S.drives) {
+    if (d.is_boot) continue;
+    for (const p of d.partitions) {
+      const ok = !!p.fstype;
+      html += row("where", p.path, S.where === p.path, !ok, p.label || p.name, `${p.size_text} · ${p.fstype || "no files system"} · ${d.name}`, ok ? ["Look here", "ok"] : ["Can't read", "neutral"]);
+    }
+  }
+  if (S.net) html += row("where", "network", S.where === "network", false, "Network folder", S.net.label, ["Connected", "ok"]);
+  el.innerHTML = html || `<p class="muted">${S.loadError ? esc(S.loadError) : S.drives.length ? "No drive with files found. Plug in the drive your copy was saved on, then press Rescan." : "Looking for drives…"}</p>`;
+}
+async function findImages() {
+  const where = S.where;
+  S.imgs = { loading: true, where }; imgPaint();
+  try {
+    const r = await api("image/find?where=" + encodeURIComponent(where));
+    if (S.where !== where) return;
+    S.imgs = { items: r.images, where };
+  } catch (e) { if (S.where !== where) return; S.imgs = { error: e.message, where }; }
+  imgPaint();
+}
+function imgPaint() {
+  const el = $("#imgList"); if (!el) return;
+  const m = S.imgs;
+  if (!S.where || !m) { el.innerHTML = `<p class="muted">Choose where to look.</p>`; return; }
+  if (m.loading) { el.innerHTML = `<div class="card muted">Looking for copies…</div>`; return; }
+  if (m.error && !m.items) { el.innerHTML = banner("bad", esc(m.error)); return; }
+  el.innerHTML = (m.error ? banner("bad", esc(m.error)) : "") + (m.items.length ? m.items.map(i => {
+    const when = new Date(i.mtime * 1000).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+    const meta = [i.size_text, i.model, i.percent != null ? `${i.percent}% recovered` : "", when].filter(Boolean).join(" · ");
+    return `<div class="drive" style="cursor:default"><span class="ico">${I.disk}</span>
+      <span class="txt"><b>${esc(i.name)}</b><small>${esc(i.folder ? i.folder + " · " : "")}${esc(meta)}</small></span>
+      ${btn("openImage", "Open", "primary", `data-id="${esc(i.id)}"`)}</div>`;
+  }).join("") : `<div class="card muted">No saved copies were found here. Copies are files ending in .img inside a few folders deep. Try another drive.</div>`);
+}
+
 // ----------------------------------------------------------------- step 4
+function lockedCard(r) {
+  const L = (r.info && r.info.locked) || [];
+  return L.map(x => `<div class="card"><h2>${esc(x.name)} is protected (${esc(x.kind)})</h2>
+    <p class="muted" style="margin:4px 0 10px">${esc(x.size_text)}. Type its password, or the long recovery key, to open it. It is only used to open the copy and is never saved.</p>
+    <div class="row2"><input type="password" id="pw-${esc(x.id)}" autocomplete="off" placeholder="Password or recovery key" style="flex:1;min-height:44px;padding:0 12px;border:1px solid var(--line2);border-radius:10px;background:var(--surface)">
+    ${btn("unlock", "Unlock", "primary", `data-id="${esc(x.id)}"`)}</div>
+    ${r.unlockError && r.unlockId === x.id ? `<div style="margin-top:10px">${banner("bad", esc(r.unlockError))}</div>` : ""}</div>`).join("");
+}
+async function unlockSection(id) {
+  const box = $("#pw-" + id), password = box ? box.value : "";
+  S.rec.unlockError = ""; S.rec.unlockId = id;
+  try {
+    const r = await api("recover/unlock", { id, password });
+    if (box) box.value = "";
+    S.rec.info = { ...S.rec.info, ...r };
+    if (!S.rec.vol && r.volumes[0]) { S.rec.vol = r.volumes[0].id; await loadDir(""); }
+  } catch (e) { S.rec.unlockError = e.message; }
+  recoverPaint();
+}
+const THUMB_EXT = /\.(jpe?g|png|gif|webp|bmp)$/i;
+const currentEntries = () => S.rec.results ? S.rec.results.entries : (S.rec.dir ? S.rec.dir.entries : []);
+function destBody() {
+  const d = S.rec.dest, folder = S.rec.destFolder || "Recovered";
+  if (d === "same") return { kind: "same" };
+  if (d === "network") return { kind: "network", folder };
+  return { kind: "partition", path: d, folder };
+}
+async function runSearch() {
+  const q = (S.rec.q || "").trim(), kind = S.rec.kind || "";
+  if (!q && !kind) { S.rec.results = null; S.rec.refocus = true; return recoverPaint(); }
+  const id = S.rec.searchId = (S.rec.searchId || 0) + 1;
+  S.rec.searching = true; S.rec.refocus = true; recoverPaint();
+  try {
+    const r = await api(`recover/search?volume=${encodeURIComponent(S.rec.vol)}&q=${encodeURIComponent(q)}&kind=${encodeURIComponent(kind)}`);
+    if (id !== S.rec.searchId) return;
+    S.rec.results = r; S.rec.error = "";
+  } catch (e) { if (id !== S.rec.searchId) return; S.rec.error = e.message; S.rec.results = null; }
+  S.rec.searching = false; S.rec.refocus = true;
+  if (S.step === 4) recoverPaint();
+}
+let thumbBusy = false;
+async function loadThumbs() {
+  if (thumbBusy) return;
+  thumbBusy = true;
+  try {
+    for (let n = 0; n < 60; n++) {
+      if (S.step !== 4) break;
+      const el = document.querySelector(".ico.thm[data-k]:not([data-done])");
+      if (!el) break;
+      const key = el.dataset.k, i = key.indexOf(":");
+      el.dataset.done = "1";
+      if (!(key in S.rec.thumbs)) {
+        try {
+          const t = await api(`recover/thumb?volume=${encodeURIComponent(key.slice(0, i))}&rel=${encodeURIComponent(key.slice(i + 1))}`);
+          S.rec.thumbs[key] = t.data ? `data:${t.mime};base64,${t.data}` : "";
+        } catch (e) { S.rec.thumbs[key] = ""; }
+      }
+      const live = [...document.querySelectorAll(".ico.thm[data-k]")].find(x => x.dataset.k === key);
+      if (live && S.rec.thumbs[key]) live.innerHTML = `<img alt="" src="${S.rec.thumbs[key]}">`;
+    }
+  } finally { thumbBusy = false; }
+}
 async function viewRecover() {
   S.rec.loading = true; S.rec.error = ""; S.rec.task = null; S.rec.sel = new Set();
+  S.rec.q = ""; S.rec.kind = ""; S.rec.results = null; S.rec.thumbs = {}; S.rec.destFolder = S.rec.destFolder || "Recovered";
   recoverPaint();
   try {
+    api("drives").then(r => { S.rec.drives = r.drives; if (S.step === 4) recoverPaint(); }).catch(() => {});
     S.rec.info = await api("recover/open", {});
+    S.rec.dest = S.rec.info.browsing ? "" : "same";
     S.rec.vol = S.rec.info.volumes[0] ? S.rec.info.volumes[0].id : "";
     if (S.rec.vol) await loadDir("");
   } catch (e) { S.rec.error = e.message; }
@@ -714,37 +875,86 @@ async function loadDir(rel) {
   catch (e) { S.rec.error = e.message; }
 }
 const kb = n => n < 1000 ? `${n} B` : n < 1e6 ? `${(n / 1e3).toFixed(0)} kB` : n < 1e9 ? `${(n / 1e6).toFixed(1)} MB` : `${(n / 1e9).toFixed(1)} GB`;
+const KINDS = [["", "All files"], ["photo", "Photos"], ["document", "Documents"], ["video", "Videos"], ["audio", "Music"], ["archive", "Zip files"]];
+function entryRows(entries, showPath) {
+  const r = S.rec;
+  return entries.map(e => {
+    const key = r.vol + ":" + e.rel;
+    const thumb = !e.is_dir && THUMB_EXT.test(e.name);
+    const ico = thumb ? `<span class="ico thm" data-k="${esc(key)}">${r.thumbs[key] ? `<img alt="" src="${r.thumbs[key]}">` : I.file}</span>`
+      : `<span class="ico">${e.is_dir ? I.folder : I.file}</span>`;
+    const where = showPath && e.folder ? `<small class="where">in ${esc(e.folder)} · <button class="link" data-act="reveal" data-rel="${esc(e.folder)}">Show folder</button></small>` : (showPath ? `<small class="where">in the top folder</small>` : "");
+    return `<div class="entry"><input type="checkbox" data-rel="${esc(e.rel)}" aria-label="Select ${esc(e.name)}" ${r.sel.has(key) ? "checked" : ""}>
+      ${ico}
+      <span class="nm">${e.is_dir ? `<button class="link" data-act="open" data-rel="${esc(e.rel)}">${esc(e.name)}</button>` : esc(e.name)}${where}</span>
+      ${e.is_dir ? "" : `<button class="link" data-act="preview" data-rel="${esc(e.rel)}" aria-label="Preview ${esc(e.name)}">Preview</button>`}
+      <small>${e.is_dir ? "" : esc(e.size_text)}</small></div>`;
+  }).join("");
+}
+function destCard(r) {
+  const browsing = r.info && r.info.browsing;
+  const opts = [];
+  if (!browsing) opts.push(`<option value="same" ${r.dest === "same" ? "selected" : ""}>The healthy drive, next to your copy</option>`);
+  else opts.push(`<option value="" ${r.dest ? "" : "selected"}>Choose where to save them…</option>`);
+  for (const d of (r.drives || [])) {
+    if (d.is_boot || (S.mode === "rescue" && d.path === S.source)) continue;
+    for (const p of d.partitions) {
+      if (!p.dest_ok) continue;
+      opts.push(`<option value="${esc(p.path)}" ${r.dest === p.path ? "selected" : ""}>${esc(p.label || p.name)} · ${esc(p.size_text)} · ${esc(p.fstype)} · ${esc(d.name)}</option>`);
+    }
+  }
+  if (S.net) opts.push(`<option value="network" ${r.dest === "network" ? "selected" : ""}>Network folder · ${esc(S.net.label)}</option>`);
+  const folderNeeded = r.dest && r.dest !== "same";
+  return `<div class="card" style="display:flex;flex-direction:column;gap:12px"><h2 style="margin:0">Save the recovered files to</h2>
+    <div class="destrow"><label>Drive<select id="destSel">${opts.join("")}</select></label>
+    ${folderNeeded ? `<label>Folder name<input id="destFolder" type="text" maxlength="60" value="${esc(r.destFolder)}"></label>` : ""}</div>
+    <div id="netBox"></div></div>`;
+}
 function recoverPaint() {
   if (S.step !== 4) return;
   const r = S.rec, running = r.task && r.task.state === "running";
+  const browsing = r.info && r.info.browsing;
   let body = "";
   if (r.loading) body = `<div class="card muted">Opening the copy…</div>`;
   else if (r.error && !r.dir) body = banner("bad", esc(r.error)) + (r.info === null ? "" : "");
-  else if (r.info && !r.info.readable) {
-    body = banner("warn", "The folders inside the copy are too damaged to browse. You can still scan the copy for files by type, such as photos and documents. Names and folders won't be kept.");
+  else if (r.info && !r.info.readable && (r.info.locked || []).length) {
+    body = banner("plain", "This copy is protected with a password (BitLocker or similar). Type it below to open it, or scan the copy for files by type, which needs no password but can't read protected files.") + lockedCard(r) + destCard(r);
+  } else if (r.info && !r.info.readable) {
+    body = banner("warn", "The folders inside the copy are too damaged to browse. You can still scan the copy for files by type, such as photos and documents. Names and folders won't be kept.") + destCard(r);
   } else if (r.dir) {
     const parts = r.dir.rel ? r.dir.rel.split("/") : [];
     const crumbs = [`<button class="link" data-act="crumb" data-rel="">Everything</button>`]
       .concat(parts.map((p, i) => `<button class="link" data-act="crumb" data-rel="${esc(parts.slice(0, i + 1).join("/"))}">${esc(p)}</button>`)).join(" › ");
     const vols = r.info.volumes.length > 1 ? `<label class="muted">Drive section: <select id="volSel">${r.info.volumes.map(v => `<option value="${esc(v.id)}" ${v.id === r.vol ? "selected" : ""}>${esc(v.name)} (${esc(v.fstype)}, ${esc(v.size_text)})</option>`).join("")}</select></label>` : "";
-    const all = r.dir.entries.length && r.dir.entries.every(e => r.sel.has(r.vol + ":" + e.rel));
-    body = `${vols}${previewCard(r.preview)}<div class="crumbs">${crumbs}</div>
-      <div class="list" role="group" aria-label="Files in this folder">
-        ${r.dir.entries.length ? `<div class="entry"><input type="checkbox" id="selAll" aria-label="Select everything in this folder" ${all ? "checked" : ""}><span class="nm muted">Select everything in this folder</span></div>` : ""}
-        ${r.dir.entries.map(e => `<div class="entry"><input type="checkbox" data-rel="${esc(e.rel)}" aria-label="Select ${esc(e.name)}" ${r.sel.has(r.vol + ":" + e.rel) ? "checked" : ""}>
-          <span class="ico">${e.is_dir ? I.folder : I.file}</span>
-          <span class="nm">${e.is_dir ? `<button class="link" data-act="open" data-rel="${esc(e.rel)}">${esc(e.name)}</button>` : esc(e.name)}</span>
-          ${e.is_dir ? "" : `<button class="link" data-act="preview" data-rel="${esc(e.rel)}" aria-label="Preview ${esc(e.name)}">Preview</button>`}
-          <small>${e.is_dir ? "" : esc(e.size_text)}</small></div>`).join("") || `<div class="entry muted">This folder is empty.</div>`}
-      </div>${r.dir.truncated ? banner("plain", "Only the first part of this long folder is shown.") : ""}${r.error ? banner("bad", esc(r.error)) : ""}`;
+    const entries = currentEntries();
+    const all = entries.length && entries.every(e => r.sel.has(r.vol + ":" + e.rel));
+    const lost = r.info.volumes.some(v => v.damaged_bytes > 0);
+    const dmg = r.info.unchecked ? banner("warn", "Parts of the copy are missing and this drive can't tell which files they affect, so recovered files may contain blanks. Check important ones.")
+      : lost ? banner("plain", "Parts of the copy could not be recovered. A file that sits partly in those parts is still saved, and is listed as damaged afterwards.") : "";
+    const finder = `<div class="finder"><input id="srch" type="search" placeholder="Search all folders by name…" value="${esc(r.q || "")}" aria-label="Search by name" autocomplete="off">
+      <select id="kindSel" aria-label="Kind of file">${KINDS.map(([v, t]) => `<option value="${v}" ${r.kind === v ? "selected" : ""}>${t}</option>`).join("")}</select></div>`;
+    let listing;
+    if (r.results) {
+      listing = `<div class="crumbs"><span>${r.results.entries.length}${r.results.truncated ? "+" : ""} ${r.results.entries.length === 1 ? "file" : "files"} found</span> · <button class="link" data-act="clearSearch">Clear search</button></div>
+        ${r.results.truncated ? banner("plain", "Showing the first matches only. Type more of the name, or choose a kind of file, to narrow it down.") : ""}`;
+    } else listing = `<div class="crumbs">${crumbs}</div>`;
+    body = `${dmg}${vols}${finder}${previewCard(r.preview)}${listing}
+      <div class="list" role="group" aria-label="Files">
+        ${entries.length ? `<div class="entry"><input type="checkbox" id="selAll" aria-label="Select everything shown" ${all ? "checked" : ""}><span class="nm muted">Select everything shown</span></div>` : ""}
+        ${entryRows(entries, !!r.results) || `<div class="entry muted">${r.searching ? "Searching…" : r.results ? "Nothing matched." : "This folder is empty."}</div>`}
+      </div>${!r.results && r.dir.truncated ? banner("plain", "Only the first part of this long folder is shown.") : ""}${r.error ? banner("bad", esc(r.error)) : ""}${destCard(r)}`;
   }
   if (r.task && r.task.state !== "idle") body += taskCard(r.task);
-  $("#main").innerHTML = `<div><h1>Get your files back</h1><p class="sub">${r.info && !r.info.readable ? "Scan the copy to find your files." : "Tick what you want to recover. It is copied to the healthy drive, next to your image file."}</p></div>${body}`;
-  const n = r.sel.size, readable = r.info && r.info.readable;
+  const intro = r.info && !r.info.readable ? "Scan the copy to find your files." : "Tick what you want to recover, then choose where to save it.";
+  $("#main").innerHTML = `<div><h1>Get your files back</h1><p class="sub">${esc(intro)}${browsing && r.info.image_name ? ` Browsing <b>${esc(r.info.image_name)}</b>.` : ""}</p></div>${body}`;
+  netBoxPaint();
+  const n = r.sel.size, readable = r.info && r.info.readable, chosen = !!r.dest;
   footer(`${btn("backCopy", "Back")}${lockNote}`,
-    `${readable ? btn("carve", "Scan for files instead", "", running ? "disabled" : "") : btn("carve", "Scan for files", "primary", r.loading || running ? "disabled" : "")}
-     ${readable ? btn("recoverSel", `Recover ${n ? n + " selected" : "selected"} ${I.arrow}`, "primary", n && !running ? "" : "disabled") : ""}
+    `${readable ? btn("carve", "Scan for files instead", "", running || !chosen ? "disabled" : "") : btn("carve", "Scan for files", "primary", r.loading || running || !chosen ? "disabled" : "")}
+     ${readable ? btn("recoverSel", `Recover ${n ? n + " selected" : "selected"} ${I.arrow}`, "primary", n && !running && chosen ? "" : "disabled") : ""}
      ${running ? btn("cancelRec", "Cancel", "quiet") : ""}`);
+  if (r.refocus) { r.refocus = false; const i = $("#srch"); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }
+  loadThumbs();
 }
 function previewCard(p) {
   if (!p) return "";
@@ -760,8 +970,9 @@ function previewCard(p) {
 function taskCard(t) {
   const what = t.kind === "carve" ? "Scanning for files" : "Copying your files";
   const head = { running: what + "…", done: "Finished", error: "Stopped", cancelled: "Cancelled" }[t.state] || what;
+  const damaged = t.damaged_count ? `<br><span class="muted">${t.damaged_count} ${t.damaged_count === 1 ? "has" : "have"} missing parts and may not open properly.</span>` : "";
   const failed = t.failed_count ? `<br><span class="muted">${t.failed_count} could not be read and were skipped.</span>` : "";
-  return `<div class="card" aria-live="polite"><h2>${esc(head)}</h2>${t.current && t.state === "running" ? `<div class="muted">${esc(t.current)}</div>` : ""}<b>${t.copied}</b> ${(t.copied === 1 ? "file " : "files ") + (t.kind === "carve" ? "found" : "copied")}${t.bytes ? ` · ${esc(t.bytes_text)}` : ""}${failed}${t.message ? `<br>${esc(t.message)}` : ""}</div>`;
+  return `<div class="card" aria-live="polite"><h2>${esc(head)}</h2>${t.current && t.state === "running" ? `<div class="muted">${esc(t.current)}</div>` : ""}<b>${t.copied}</b> ${(t.copied === 1 ? "file " : "files ") + (t.kind === "carve" ? "found" : "copied")}${t.bytes ? ` · ${esc(t.bytes_text)}` : ""}${damaged}${failed}${t.message ? `<br>${esc(t.message)}` : ""}</div>`;
 }
 function watchTask() {
   clearInterval(S.rec.timer);
@@ -795,8 +1006,10 @@ function viewDone() {
     <div><h1>${S.rec.finished ? "You're finished" : "Your files are back"}</h1>
     <p class="sub">${S.rec.finished ? "It is safe to shut down the computer and unplug the drives." : "They were saved on the healthy drive."}</p></div>
     <div class="card"><h2>Where to find them</h2><div class="mono">${esc(folder)}</div>
-      <p class="muted" style="margin:8px 0 0">On the healthy drive, inside the folder "${esc((S.status && S.status.folder) || "DriveRescue")}".</p></div>
+      <p class="muted" style="margin:8px 0 0">Open this folder on the drive you chose to see what was recovered.</p></div>
     <div class="card"><h2>Summary</h2><b>${t.copied || 0}</b> ${(t.copied === 1 ? "file " : "files ") + (t.kind === "carve" ? "found" : "recovered")}${t.bytes ? ` (${esc(t.bytes_text)})` : ""}
+      ${t.organized ? `<p class="muted" style="margin:8px 0 0">Sorted into folders: ${esc(Object.entries(t.organized.groups).map(([g, n]) => n + " " + g.toLowerCase()).join(", ") || "nothing")}${t.organized.tiny ? `. ${t.organized.tiny} tiny scraps and ` : ""}${t.organized.duplicates ? `${t.organized.tiny ? "" : ". "}${t.organized.duplicates} exact duplicates were set aside in their own folders` : ""}.</p>` : ""}
+      ${t.damaged_count ? `<p style="margin:8px 0 0"><b>${t.damaged_count} ${t.damaged_count === 1 ? "file was" : "files were"} saved with missing parts</b> and may not open properly: ${esc((t.damaged || []).slice(0, 5).map(f => f.path.split("/").pop()).join(", "))}${t.damaged_count > 5 ? ", and more" : ""}.</p>` : ""}
       ${t.failed_count ? `<p class="muted" style="margin:8px 0 0">${t.failed_count} could not be read: ${esc((t.failed || []).slice(0, 5).map(f => f.path.split("/").pop()).join(", "))}${t.failed_count > 5 ? ", and more" : ""}.</p>` : ""}</div>
     ${reportCard}`;
   footer(S.rec.finished ? "" : btn("backRecover", "Recover more"), S.rec.finished ? "" : btn("finish", "Finish", "primary"));
@@ -836,19 +1049,34 @@ document.addEventListener("click", async ev => {
         document.body.innerHTML = '<p style="font:1.25rem system-ui;padding:3rem;text-align:center">' + (act === "poweroff" ? "Shutting down… you can unplug the drives when the screen goes dark." : "Restarting…") + "</p>";
       }
     }
+    else if (act === "desktop") {
+      if (confirm("Close Drive Rescue and show the Linux desktop?\n\nA copy that is running keeps going in the background. To come back, open \"Drive Rescue\" on the desktop.")) {
+        await api("system/desktop", {});
+        document.body.innerHTML = '<p style="font:1.25rem system-ui;padding:3rem;text-align:center">Opening the desktop…</p>';
+      }
+    }
     else if (act === "theme") toggleTheme();
     else if (act === "report") { el.disabled = true; try { await saveReport(); } finally { el.disabled = false; } }
     else if (act === "cancelShutdown") cancelShutdown();
     else if (act === "netOpen") { S.netOpen = true; S.netError = ""; netBoxPaint(); }
     else if (act === "netClose") { S.netOpen = false; S.netError = ""; netBoxPaint(); }
-    else if (act === "netDisconnect") { await api("network/disconnect", {}); S.net = null; if (S.dest === "network") S.dest = ""; lists(); netBoxPaint(); schedulePlan(); }
+    else if (act === "netDisconnect") {
+      await api("network/disconnect", {}); S.net = null; if (S.dest === "network") S.dest = "";
+      if (S.rec.dest === "network") S.rec.dest = S.rec.info && S.rec.info.browsing ? "" : "same";
+      if (S.mode === "browse" && S.step === 2) { if (S.where === "network") { S.where = ""; S.imgs = null; } lists(); imgPaint(); }
+      else if (S.step === 4) recoverPaint();
+      else { lists(); schedulePlan(); }
+      netBoxPaint();
+    }
     else if (act === "netConnect") {
       const f = S.netForm, pass = ($("#netPass") || {}).value || "";
       S.netBusy = true; S.netError = ""; netBoxPaint();
       try {
         const r = await api("network/connect", { kind: f.kind, address: f.address, share: f.share, user: f.user, password: pass });
-        S.net = { label: r.label, free_text: r.free_text }; S.netOpen = false; S.dest = "network";
-        lists(); schedulePlan();
+        S.net = { label: r.label, free_text: r.free_text }; S.netOpen = false;
+        if (S.step === 4) { S.rec.dest = "network"; recoverPaint(); }
+        else if (S.mode === "browse") { S.where = "network"; lists(); findImages(); }
+        else { S.dest = "network"; lists(); schedulePlan(); }
       } catch (e) { S.netError = e.message; }
       S.netBusy = false; netBoxPaint();
     }
@@ -856,7 +1084,7 @@ document.addEventListener("click", async ev => {
     else if (act === "textSmaller") setZoom((S.zoom || 0) - 1);
     else if (act === "next") go(2);
     else if (act === "back") go(S.step - 1);
-    else if (act === "rescan") { S.drives = []; S.health = {}; lists(); await loadDrives(); }
+    else if (act === "rescan") { S.drives = []; S.health = {}; lists(); await loadDrives(); if (S.mode === "browse" && S.where) findImages(); }
     else if (act === "start") {
       el.disabled = true;
       try { await api("start", { source: S.source, dest: S.dest, folder: S.folder, opts: S.opts }); S.status = null; S.lastState = null; S.userPaused = false; $("#footer").dataset.sig = ""; go(3); }
@@ -867,17 +1095,33 @@ document.addEventListener("click", async ev => {
     else if (act === "stop") { if (confirm(S.mode === "clone" ? "Stop cloning? The bigger drive will be left half finished and won't start up until a clone completes." : "Stop copying? What has been copied so far is kept, and you can continue later.")) { S.status = await api("stop", {}); S.lastState = S.status.state; paintCopy(S.status); copyFooter(S.status); } }
     else if (act === "toRecover") go(4);
     else if (act === "toDone") go(5);
-    else if (act === "mode") { S.mode = el.dataset.mode; S.source = S.dest = ""; S.plan = null; S.confirm = ""; S.status = null; go(2); }
+    else if (act === "mode") { S.mode = el.dataset.mode; S.source = S.dest = ""; S.plan = null; S.confirm = ""; S.status = null; S.where = ""; S.imgs = null; go(2); }
     else if (act === "again") { S.status = null; S.source = S.dest = ""; S.plan = null; S.confirm = ""; $("#footer").dataset.sig = ""; go(1); }
     else if (act === "startClone") {
       el.disabled = true;
-      try { await api("clone/start", { source: S.source, dest: S.dest, confirm: S.confirm }); S.status = null; S.lastState = null; $("#footer").dataset.sig = ""; go(3); }
+      try { await api("clone/start", { source: S.source, dest: S.dest, confirm: S.confirm, opts: { verify: S.verifyClone !== false } }); S.status = null; S.lastState = null; $("#footer").dataset.sig = ""; go(3); }
       catch (e) { S.plan = { ok: false, errors: (e.data && e.data.errors && e.data.errors.length) ? e.data.errors : [e.message], warnings: (e.data && e.data.warnings) || [] }; notice(); drivesFooter(); }
     }
-    else if (act === "backCopy") { $("#footer").dataset.sig = ""; go(3); }
+    else if (act === "backCopy") {
+      $("#footer").dataset.sig = "";
+      if (S.mode === "browse") { await api("recover/close", {}); S.rec.info = null; S.rec.dir = null; go(2); } else go(3);
+    }
+    else if (act === "openImage") {
+      el.disabled = true;
+      try { await api("image/open", { id: el.dataset.id }); S.rec.finished = false; go(4); }
+      catch (e) { S.imgs = { ...(S.imgs || {}), error: e.message }; imgPaint(); }
+    }
+    else if (act === "reveal") { S.rec.q = ""; S.rec.kind = ""; S.rec.results = null; S.rec.preview = null; await loadDir(rel); recoverPaint(); }
+    else if (act === "clearSearch") { S.rec.q = ""; S.rec.kind = ""; S.rec.results = null; recoverPaint(); }
     else if (act === "backRecover") go(4);
     else if (act === "open") { S.rec.preview = null; await loadDir(rel); S.rec.sel = new Set(); recoverPaint(); }
     else if (act === "crumb") { S.rec.preview = null; await loadDir(rel); recoverPaint(); }
+    else if (act === "assess") {
+      const path = S.source; S.assess = S.assess || {}; S.assess[path] = { loading: true }; notice();
+      try { S.assess[path] = await api("assess?path=" + encodeURIComponent(path)); } catch (e) { S.assess[path] = { error: e.message }; }
+      notice();
+    }
+    else if (act === "unlock") { el.disabled = true; try { await unlockSection(el.dataset.id); } finally { el.disabled = false; } }
     else if (act === "preview") {
       const name = rel.split("/").pop();
       S.rec.preview = { name, rel, loading: true }; recoverPaint();
@@ -889,9 +1133,9 @@ document.addEventListener("click", async ev => {
     else if (act === "pickPreview") { S.rec.sel.add(S.rec.vol + ":" + rel); S.rec.preview = null; recoverPaint(); }
     else if (act === "recoverSel") {
       const items = [...S.rec.sel].map(k => ({ volume: k.slice(0, k.indexOf(":")), rel: k.slice(k.indexOf(":") + 1) }));
-      S.rec.task = await api("recover/copy", { items }); S.rec.error = ""; recoverPaint(); watchTask();
+      S.rec.task = await api("recover/copy", { items, dest: destBody() }); S.rec.error = ""; recoverPaint(); watchTask();
     }
-    else if (act === "carve") { S.rec.task = await api("recover/carve", {}); S.rec.error = ""; recoverPaint(); watchTask(); }
+    else if (act === "carve") { S.rec.task = await api("recover/carve", { dest: destBody() }); S.rec.error = ""; recoverPaint(); watchTask(); }
     else if (act === "cancelRec") { await api("recover/cancel", {}); }
     else if (act === "finish") { await api("recover/close", {}); S.rec.finished = true; viewDone(); }
   } catch (e) {
@@ -904,11 +1148,14 @@ document.addEventListener("input", ev => {
   else if (id === "netAddr") S.netForm.address = ev.target.value.trim();
   else if (id === "netShare") S.netForm.share = ev.target.value.trim();
   else if (id === "netUser") S.netForm.user = ev.target.value.trim();
+  else if (id === "srch") { S.rec.q = ev.target.value; clearTimeout(S.rec.searchTimer); S.rec.searchTimer = setTimeout(runSearch, 400); }
 });
 document.addEventListener("change", ev => {
   const t = ev.target;
   if (t.name === "source") { S.source = t.value; const d = S.drives.find(x => x.partitions.some(p => p.path === S.dest)); if (d && d.path === S.source) S.dest = ""; lists(); schedulePlan(); }
   else if (t.name === "dest") { S.dest = t.value; lists(); schedulePlan(); }
+  else if (t.id === "optVerifyClone") { S.verifyClone = t.checked; }
+  else if (t.id === "optThorough") { S.opts.thorough = t.checked; advHint(); schedulePlan(); }
   else if (t.id === "optPriority") { S.opts.pause_after_quick = t.checked; advHint(); schedulePlan(); }
   else if (t.id === "optSound") { S.sound = t.checked; try { localStorage.setItem("dr-sound", t.checked ? "1" : "0"); } catch (e) { /* fine */ } }
   else if (t.id === "optShut") { S.shutdownAfter = t.checked; if (!t.checked) cancelShutdown(); }
@@ -916,8 +1163,12 @@ document.addEventListener("change", ev => {
   else if (t.id === "optStyle") { S.opts.style = t.value; advHint(); schedulePlan(); }
   else if (t.id === "optRetries") { S.opts.retries = Math.max(0, Math.min(10, parseInt(t.value || "3", 10))); advHint(); schedulePlan(); }
   else if (t.id === "optFolder") { S.folder = t.value.trim() || "DriveRescue"; advHint(); schedulePlan(); }
-  else if (t.id === "volSel") { S.rec.vol = t.value; S.rec.sel = new Set(); loadDir("").then(recoverPaint); }
-  else if (t.id === "selAll") { for (const e of S.rec.dir.entries) { const k = S.rec.vol + ":" + e.rel; t.checked ? S.rec.sel.add(k) : S.rec.sel.delete(k); } recoverPaint(); }
+  else if (t.name === "where") { S.where = t.value; lists(); findImages(); }
+  else if (t.id === "kindSel") { S.rec.kind = t.value; runSearch(); }
+  else if (t.id === "destSel") { S.rec.dest = t.value; recoverPaint(); }
+  else if (t.id === "destFolder") { S.rec.destFolder = t.value.trim() || "Recovered"; }
+  else if (t.id === "volSel") { S.rec.vol = t.value; S.rec.sel = new Set(); S.rec.q = ""; S.rec.kind = ""; S.rec.results = null; loadDir("").then(recoverPaint); }
+  else if (t.id === "selAll") { for (const e of currentEntries()) { const k = S.rec.vol + ":" + e.rel; t.checked ? S.rec.sel.add(k) : S.rec.sel.delete(k); } recoverPaint(); }
   else if (t.dataset && t.dataset.rel !== undefined && t.type === "checkbox") { const k = S.rec.vol + ":" + t.dataset.rel; t.checked ? S.rec.sel.add(k) : S.rec.sel.delete(k); recoverPaint(); }
 });
 
@@ -926,11 +1177,15 @@ setZoom(S.zoom || 0);
 applyTheme();
 api("system/info").then(r => { S.power = !!r.power; if (r.power) document.querySelectorAll(".pw").forEach(b => b.hidden = false); }).catch(() => {});
 (async function boot() {
+  const shown = Date.now();
+  const hideSplash = () => { const sp = $("#splash"); if (!sp) return;
+    setTimeout(() => { sp.classList.add("gone"); setTimeout(() => sp.remove(), 600); }, Math.max(0, 1100 - (Date.now() - shown))); };
   try {
     const s = await api("status");
-    if (s.state !== "none") { S.mode = s.mode === "clone" ? "clone" : "rescue"; S.status = s; S.lastState = s.state; go(3); return; }
+    if (s.state !== "none") { S.mode = s.mode === "clone" ? "clone" : "rescue"; S.status = s; S.lastState = s.state; go(3); hideSplash(); return; }
   } catch (e) { /* fall through to the welcome screen */ }
   go(1);
+  hideSplash();
 })();
 </script>
 </body>

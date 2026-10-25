@@ -50,9 +50,50 @@ class FakeSystem(System):
     def which(self, name):
         return SHIM if name in ("ddrescue", "gddrescue") else shutil.which(name)
 
+    def dm_create(self, name, table):
+        self.calls.append(("dm_create", name, table))
+        return "/dev/mapper/" + name, ""
+
+    def crypt_open(self, device, name, password, kind):
+        self.calls.append(("crypt_open", device, name, kind))
+        if password != getattr(self, "crypt_password", "right"):
+            return None, "That password didn't work. Check it and try again."
+        return "/dev/mapper/" + name, ""
+
+    def crypt_close(self, name):
+        self.calls.append(("crypt_close", name))
+
+    def dm_remove(self, name):
+        self.calls.append(("dm_remove", name))
+
+    def spot_reader(self, path, size):
+        bad = getattr(self, "bad_spots", set())
+
+        def read(offset):
+            if offset in bad:
+                raise OSError(5, "io")
+            return 4096
+        return read
+
+    def is_readonly(self, path):
+        return True
+
+    def power_status(self):
+        return getattr(self, "power_state", {"on_battery": False, "percent": None})
+
+    def inhibit_sleep(self):
+        self.calls.append(("inhibit",))
+        return type("Held", (), {"close": lambda me: self.calls.append(("uninhibit",))})()
+
+    def close_kiosk(self):
+        self.kiosk_closed = True
+
     def set_readonly(self, path):
         self.calls.append(("setro", path))
         return True, ""
+
+    def used_bytes(self, part, scratch):
+        return None  # tests never mount anything for real just to measure it
 
     def set_readwrite(self, path):
         self.calls.append(("setrw", path))

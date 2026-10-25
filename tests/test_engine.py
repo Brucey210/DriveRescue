@@ -357,7 +357,7 @@ class JobTests(Base):
         self.assertEqual(snap["percent"], round(100 * (1 - 2 / self.blocks), 1))
         self.assertEqual(snap["cells"][10:12], ["skipped", "skipped"])
         self.assertEqual(snap["cells"][30], "done")  # recovered by the retry pass
-        self.assertEqual([p["status"] for p in snap["phases"]], ["done", "done", "done"])
+        self.assertEqual([p["status"] for p in snap["phases"]], ["done", "done", "done", "done"])
         self.assertImageMatches({10, 11})
         self.assertEqual(os.path.getsize(self.plan["image"]), self.plan["source"]["size"])
         with open(self.plan["jobfile"]) as fh:
@@ -369,7 +369,7 @@ class JobTests(Base):
         self.assertEqual(wait_for(job, self.TERMINAL), "done")
         snap = job.snapshot()
         self.assertEqual(snap["skipped"], 3 * BLOCK)  # the flaky block is not retried
-        self.assertEqual(snap["phases"][1]["status"], "skipped")
+        self.assertEqual(snap["phases"][2]["status"], "skipped")
 
     def test_a_clean_drive_completes(self):
         os.remove(self.fs.source_file + ".bad")
@@ -446,9 +446,11 @@ class JobTests(Base):
 
     def test_features_are_read_from_ddrescue_itself(self):
         ddrescue._FEATURES.clear()
-        self.assertEqual(ddrescue.detect_features(self.fs, SHIM), {"no_trim": True})
+        self.assertEqual(ddrescue.detect_features(self.fs, SHIM),
+                         {"no_trim": True, "min_read_rate": True, "reopen": True, "retrim": True})
         ddrescue._FEATURES.clear()
-        self.assertEqual(ddrescue.detect_features(self.fs, "/nonexistent/ddrescue"), {"no_trim": False})
+        self.assertEqual(ddrescue.detect_features(self.fs, "/nonexistent/ddrescue"),
+                         {"no_trim": False, "min_read_rate": False, "reopen": False, "retrim": False})
         ddrescue._FEATURES.clear()
 
     def test_the_job_uses_the_drives_sector_size_and_no_trim(self):
@@ -458,6 +460,197 @@ class JobTests(Base):
         cmd = job._command("quick")
         self.assertEqual(cmd[cmd.index("-b") + 1], "4096")
         self.assertIn("--no-trim", cmd)
+
+    def test_the_backwards_pass_runs_and_is_shown_when_asked_for(self):
+        job = self.job(thorough=True)
+        job.start()
+        self.assertEqual(wait_for(job, self.TERMINAL), "done")
+        snap = job.snapshot()
+        self.assertEqual([p["key"] for p in snap["phases"]], ["meta", "quick", "retry", "reverse", "final"])
+        self.assertTrue(all(p["status"] == "done" for p in snap["phases"]))
+        plain = self.job()
+        self.assertNotIn("reverse", [p["key"] for p in plain.snapshot()["phases"]])
+
+    # ---- extra care
+    def test_health_advice_is_plain_and_matches_the_verdict(self):
+        h = drives.check_health(self.fs, self.fs.source_file)
+        self.assertEqual(h["status"], "failing")
+        self.assertIn("failing", h["advice"])
+        self.assertIn("can no longer read", h["advice"])
+        self.assertIn("didn't report", drives.check_health(self.fs, "/dev/nothing")["advice"])
+
+    def test_the_time_left_becomes_a_range_when_the_speed_is_all_over_the_place(self):
+        job = self.job()
+        job.size = 10 ** 13
+        job.state = "running"
+        job._t0 = job.clock()
+        for i in range(30):
+            job._live["rate"] = 100e6 if i % 2 else 5e6
+            snap = job.snapshot()
+        self.assertIn(" to ", snap["eta_text"])
+        job2 = self.job()
+        job2.size = 10 ** 13
+        job2.state = "running"
+        job2._t0 = job2.clock()
+        for _ in range(30):
+            job2._live["rate"] = 50e6
+            snap2 = job2.snapshot()
+        self.assertNotIn(" to ", snap2["eta_text"])
+
+    def test_the_log_confirms_the_failing_drive_was_locked_and_sleep_is_blocked(self):
+        lines = []
+        job = ImageJob(self.fs, self.plan, {"retries": 0}, cells=self.blocks, log=lines.append)
+        job.start()
+        self.assertEqual(wait_for(job, self.TERMINAL), "done")
+        self.assertIn("locked as read-only", "\n".join(lines))
+        self.assertIn(("inhibit",), self.fs.calls)
+        self.assertIn(("uninhibit",), self.fs.calls)
+
+    def test_battery_use_is_reported(self):
+        job = self.job()
+        self.fs.power_state = {"on_battery": True, "percent": 41}
+        self.assertEqual(job.snapshot()["power"], {"on_battery": True, "percent": 41})
+
+    def test_a_drive_that_comes_back_under_a_new_name_is_found_again(self):
+        job = self.job()
+        job.start()
+        wait_for(job, self.TERMINAL)
+        job.state = "paused"
+        real = self.fs.lsblk
+
+        def renamed():
+            devs = real()
+            devs[0] = {**devs[0], "path": "/dev/fake-sdz", "name": "sdz"}
+            return devs
+        self.fs.lsblk = renamed
+        job.resume()
+        self.assertEqual(job.plan["source"]["path"], "/dev/fake-sdz")
+        self.assertIn(("setro", "/dev/fake-sdz"), self.fs.calls)  # the new name is locked read-only too
+        job.state = "done"
+
+    # ---- safety while copying
+    def test_resume_refuses_a_different_drive(self):
+        os.environ["FAKE_DELAY"] = "0.05"
+        job = self.job()
+        job.start()
+        job.pause()
+        self.assertEqual(wait_for(job, self.TERMINAL), "paused")
+        real = self.fs.lsblk
+
+        def swapped():
+            devs = real()
+            devs[0] = {**devs[0], "serial": "SOMEONEELSE"}
+            return devs
+        self.fs.lsblk = swapped
+        with self.assertRaises(JobError) as cm:
+            job.resume()
+        self.assertIn("not the same one", str(cm.exception))
+        self.assertEqual(job.state, "paused")
+        self.fs.lsblk = real
+        os.environ["FAKE_DELAY"] = "0.002"
+        job.resume()
+        self.assertEqual(wait_for(job, self.TERMINAL), "done")
+
+    def test_resume_refuses_a_drive_that_is_gone(self):
+        job = self.job()
+        job.start()
+        wait_for(job, self.TERMINAL)
+        job.state = "paused"
+        real = self.fs.lsblk
+        self.fs.lsblk = lambda: [d for d in real() if d["path"] != self.fs.source_file]
+        with self.assertRaises(JobError) as cm:
+            job.resume()
+        self.assertIn("isn't connected", str(cm.exception))
+
+    def test_progress_for_a_different_sized_drive_is_not_reused(self):
+        job = self.job()
+        job.start()
+        wait_for(job, self.TERMINAL)
+        with open(self.plan["mapfile"], "a") as fh:
+            fh.write("0x%08X  0x00010000  +\n" % (self.plan["source"]["size"] + 0x10000))  # runs past the end
+        again = plan_mod.make_plan(self.fs, self.fs.source_file, "/dev/fake-sdb1", None)
+        self.assertFalse(again["ok"])
+        self.assertIn("different size", " ".join(again["errors"]))
+
+    def test_a_stalled_drive_pauses_the_copy_by_itself(self):
+        os.environ["FAKE_DELAY"] = "5"
+        job = self.job()
+        job.stall_limit, job.watch_tick = 0.6, 0.1
+        job.start()
+        self.assertEqual(wait_for(job, self.TERMINAL, timeout=15), "paused")
+        snap = job.snapshot()
+        self.assertEqual(snap["pause_reason"], "stall")
+        self.assertIn("stopped responding", snap["message"])
+        os.environ["FAKE_DELAY"] = "0.002"
+        job.resume()
+        self.assertEqual(wait_for(job, self.TERMINAL), "done")
+        self.assertEqual(job.snapshot()["pause_reason"], "")
+
+    def test_a_hot_drive_pauses_the_copy_by_itself(self):
+        os.environ["FAKE_DELAY"] = "0.05"
+        self.fs.smart[self.fs.source_file]["temperature"]["current"] = 68
+        job = self.job()
+        job.heat_interval, job.watch_tick = 0.3, 0.1
+        job.start()
+        self.assertEqual(wait_for(job, self.TERMINAL, timeout=20), "paused")
+        snap = job.snapshot()
+        self.assertEqual(snap["pause_reason"], "heat")
+        self.assertIn("68", snap["message"])
+
+    def test_the_key_areas_are_copied_first_and_the_log_records_it(self):
+        lines = []
+        job = ImageJob(self.fs, self.plan, {"retries": 0}, cells=self.blocks, log=lines.append)
+        self.assertEqual(job._phase_keys(), ["meta", "quick"])
+        areas = job._meta_areas()
+        size = self.plan["source"]["size"]
+        self.assertEqual(areas[0][0], 0)
+        self.assertEqual(areas[-1][0] + areas[-1][1], size)  # the end of the drive (backup partition table)
+        job.start()
+        self.assertEqual(wait_for(job, self.TERMINAL), "done")
+        text = "\n".join(lines)
+        self.assertIn("Key areas first", text)
+        self.assertIn("Copy started", text)
+        self.assertIn("Now done", text)
+
+    def test_ntfs_index_and_partition_starts_are_key_areas(self):
+        src = self.fs.source_file
+        sector = 512
+        with open(src, "r+b") as fh:
+            boot = bytearray(512)
+            boot[3:11] = b"NTFS    "
+            boot[11:13] = (512).to_bytes(2, "little")
+            boot[13] = 8
+            boot[48:56] = (40).to_bytes(8, "little")  # the file index starts at cluster 40
+            fh.seek(2048 * sector)
+            fh.write(boot)
+        from test_clone import build_gpt, DATA
+        total = os.path.getsize(src) // sector
+        build_gpt(src, total, [(DATA, 2048, total - 2048 - 1, "Data")])
+        job = self.job()
+        areas = job._meta_areas()
+        starts = [a[0] for a in areas]
+        self.assertTrue(any(a <= 2048 * sector < a + n for a, n in areas))          # the partition's own start
+        self.assertTrue(any(a <= 2048 * sector + 40 * 8 * 512 < a + n for a, n in areas))  # the file index
+        self.assertEqual(starts, sorted(starts))
+        self.assertTrue(all(areas[i][0] + areas[i][1] <= areas[i + 1][0] for i in range(len(areas) - 1)))
+
+    def test_slow_areas_are_skipped_early_and_a_backwards_pass_is_optional(self):
+        feats = {"no_trim": True, "min_read_rate": True, "reopen": True, "retrim": True}
+        quick = ddrescue.build_command("d", "s", "i", "m", "quick", {"style": "fast", **feats})
+        self.assertIn("--min-read-rate=65536", quick)
+        self.assertIn("--reopen-on-error", quick)
+        rev = ddrescue.build_command("d", "s", "i", "m", "reverse", {"style": "fast", **feats})
+        self.assertIn("-R", rev)
+        self.assertIn("--retrim", rev)
+        self.assertNotIn("--min-read-rate=65536", rev)
+        back = ddrescue.build_command("d", "s", "i", "m", "reverse", {"style": "fast", "direction": "backward"})
+        self.assertNotIn("-R", back)  # the second look goes the other way round
+        plain = ddrescue.build_command("d", "s", "i", "m", "quick", {"style": "fast"})
+        self.assertFalse([a for a in plain if "min-read" in a or "reopen" in a])  # off unless supported
+        job = self.job()
+        self.assertEqual(job._phase_keys(), ["meta", "quick", "retry"])
+        job.opts["thorough"] = True
+        self.assertEqual(job._phase_keys(), ["meta", "quick", "retry", "reverse"])
 
     def test_a_drive_that_disappears_stops_the_copy_with_a_clear_message(self):
         os.environ["FAKE_DELAY"] = "0.05"

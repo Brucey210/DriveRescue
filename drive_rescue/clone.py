@@ -43,7 +43,8 @@ def clean_clone_opts(raw):
         retries = int(raw.get("retries", 1))
     except (TypeError, ValueError):
         retries = 1
-    return {"retries": max(0, min(5, retries)), "style": "fast", "direction": "forward"}
+    return {"retries": max(0, min(5, retries)), "style": "fast", "direction": "forward",
+            "verify": raw.get("verify") is not False}
 
 
 def _fstypes_from_drive(drive, layout):
@@ -105,7 +106,10 @@ def used_estimate(system, source):
     for part in source["partitions"]:
         if not part.get("fstype"):
             continue
-        used = system.used_bytes(part, scratch)
+        try:
+            used = system.used_bytes(part, scratch)
+        except OSError:  # measuring is a courtesy: if it can't be done, the plan carries on without it
+            return None
         if used is None:
             return None
         total += used
@@ -279,6 +283,91 @@ def resize_filesystem(system, dest, sector, part, fstype):
         system.detach_image(loop)
 
 
+VERIFY_CHUNK = 8 * 1024 * 1024
+ESP_GPT = "c12a7328-f81f-11d2-ba4b-00a0c93ec93b"
+ESP_MBR = 0xEF
+# Start-up files of common systems, in the order they are tried for the standard fallback location.
+BOOT_CANDIDATES = ("EFI/Microsoft/Boot/bootmgfw.efi", "EFI/ubuntu/shimx64.efi", "EFI/debian/shimx64.efi",
+                   "EFI/fedora/shimx64.efi", "EFI/arch/grubx64.efi", "EFI/systemd/systemd-bootx64.efi",
+                   "EFI/opensuse/shim.efi", "EFI/BOOT/grubx64.efi")
+
+
+def verify_copy(source, dest, size, progress=None, cancelled=lambda: False, chunk=VERIFY_CHUNK):
+    """Read the original and the copy again and compare them, byte for byte, over the length of the
+    original. Returns ("ok", None), ("different", byte position of the first difference),
+    ("unreadable", position) or ("cancelled", None)."""
+    done = 0
+    with open(source, "rb") as a, open(dest, "rb") as b:
+        while done < size:
+            if cancelled():
+                return "cancelled", None
+            n = min(chunk, size - done)
+            try:
+                x = a.read(n)
+                y = b.read(n)
+            except OSError:
+                return "unreadable", done
+            if x != y:
+                for i in range(min(len(x), len(y))):
+                    if x[i] != y[i]:
+                        return "different", done + i
+                return "different", done + min(len(x), len(y))
+            if not x:
+                break
+            done += len(x)
+            if progress:
+                progress(done)
+    return "ok", None
+
+
+def ensure_uefi_fallback(system, dest, layout, workdir):
+    """A computer finds a new drive's start-up file at one standard place. Cloning copies the system's own
+    file but not that standard one, so some computers don't offer the clone to start from. Add it,
+    by copying the system's start-up file. Returns a sentence to show, or "" when nothing was needed."""
+    if layout.get("kind") not in ("gpt", "mbr"):
+        return ""
+    sector = layout["sector"]
+    esp = next((p for p in layout["parts"]
+                if (p["type"].lower() == ESP_GPT if layout["kind"] == "gpt" else p["type"] == ESP_MBR)), None)
+    if esp is None:
+        return ""
+    loop, _err = system.attach_region(dest, esp["start"] * sector, (esp["end"] - esp["start"] + 1) * sector)
+    if not loop:
+        return ""
+    mp = os.path.join(workdir, "esp")
+    try:
+        ok, _msg = system.mount(loop, mp, "vfat", read_only=False)
+        if not ok:
+            return ""
+        try:
+            def find(rel):
+                here = mp
+                for part in rel.split("/"):  # names on the system partition ignore capital letters
+                    try:
+                        match = next((n for n in os.listdir(here) if n.lower() == part.lower()), None)
+                    except OSError:
+                        return None
+                    if match is None:
+                        return None
+                    here = os.path.join(here, match)
+                return here
+            if find("EFI/BOOT/BOOTX64.EFI"):
+                return ""
+            for cand in BOOT_CANDIDATES:
+                src = find(cand)
+                if src:
+                    os.makedirs(os.path.join(mp, "EFI", "BOOT"), exist_ok=True)
+                    with open(src, "rb") as fin, open(os.path.join(mp, "EFI", "BOOT", "BOOTX64.EFI"), "wb") as fout:
+                        fout.write(fin.read())
+                    system.run(["sync"], timeout=60)
+                    return "Added the standard start-up file so the computer offers this drive to start from."
+            return ""
+        finally:
+            system.umount(mp)
+    finally:
+        system.detach_image(loop)
+
+
 def finish_layout(system, dest, progress=None):
     """Make the whole target drive usable. Returns a result dict for the screens."""
     res = {"ok": True, "extended": False, "lines": [], "warnings": [], "unallocated_text": "", "fs_ok": None}
@@ -331,6 +420,12 @@ def finish_layout(system, dest, progress=None):
     free = max(0, partitions.usable_last(new, total) - last) * sector
     res["unallocated_text"] = human_size(free) if free > 2 * 1024 * 1024 else ""
     res["boot"] = boot_check(new, system.firmware())
+    try:
+        note = ensure_uefi_fallback(system, dest, partitions.read_layout(dest, sector), WORK_DIR)
+        if note:
+            res["lines"].append(note)
+    except Exception:
+        pass  # this is a convenience; the clone is already complete
     if plan.get("reason"):
         res["warnings"].append(plan["reason"])
     system.run(["blockdev", "--rereadpt", dest], timeout=30)
@@ -339,14 +434,17 @@ def finish_layout(system, dest, progress=None):
 
 class CloneJob(ImageJob):
     """Copy one whole drive onto another with ddrescue, then extend the partitions."""
+    META_FIRST = False
 
     def __init__(self, system, plan, opts, **kw):
         opts = {"retries": 1, **(opts or {})}
         super().__init__(system, plan, opts, **kw)
         self.result = None
         self.finishing_note = ""
+        self.stage = ""
+        self._verify_note = ""
 
-    def _command(self, key):
+    def _command(self, key, area=None):
         return build_clone_command(self.binary, self.plan["source"]["path"], self.plan["image"],
                                    self.plan["mapfile"], key, self.opts, sector=self.plan.get("sector", 512))
 
@@ -382,11 +480,41 @@ class CloneJob(ImageJob):
                                         "incomplete and the partitions were left as they were. Use “Rescue files” for this drive."]}
             self._finish("done", "")
             return
+        verified = None
+        if self.opts.get("verify", True):
+            with self._lock:
+                self.state = "finishing"
+                self.stage = "verify"
+                self.message = "Checking the copy against the original… 0%"
+            self.log("Checking the copy against the original")
+            verdict, where = verify_copy(
+                self.plan["source"]["path"], self.plan["image"], self.size,
+                progress=lambda done: setattr(self, "message",
+                                              f"Checking the copy against the original… {int(100 * done / self.size)}%"),
+                cancelled=lambda: self._want == "stop")
+            if verdict == "different":
+                self.log(f"Verification found a difference at byte {where}")
+                self.result = {"ok": False, "extended": False, "lines": [], "unallocated_text": "", "fs_ok": None,
+                               "verified": False,
+                               "warnings": [f"The copy does not match the original (first difference about "
+                                            f"{human_size(where)} into the drive). The partitions were left as they were. "
+                                            "Run the clone again; if it happens again the new drive may be faulty."]}
+                self._finish("done", "")
+                return
+            verified = {"ok": True, "unreadable": False, "cancelled": False}.get(verdict) if verdict == "ok" else None
+            self.log(f"Verification result: {verdict}")
+            self._verify_note = {"ok": "The copy was checked against the original and matches exactly.",
+                                 "unreadable": "The copy could not be fully checked because a drive stopped answering.",
+                                 "cancelled": "The check of the copy was skipped."}.get(verdict, "")
         with self._lock:
             self.state = "finishing"
+            self.stage = "layout"
             self.message = "Making the whole drive usable…"
         try:
             self.result = finish_layout(self.system, self.plan["image"])
+            self.result["verified"] = verified
+            if getattr(self, "_verify_note", ""):
+                self.result["lines"].insert(0, self._verify_note)
         except Exception as exc:  # the copy itself is fine; say what did not happen
             self.result = {"ok": False, "extended": False, "lines": [], "unallocated_text": "", "fs_ok": None,
                            "warnings": [f"The copy finished but the extra room could not be set up: {exc}"]}
@@ -400,6 +528,6 @@ class CloneJob(ImageJob):
                                                   snap["complete"] else ("skipped" if st == "done" else "waiting"))
         snap["phases"] = [{"key": k, "title": t, "note": n, "status": s}
                           for (k, t, n), s in zip(CLONE_PHASES, (copy, lay))]
-        snap.update({"mode": "clone", "result": self.result, "outlook": None, "image": self.plan["image"],
+        snap.update({"mode": "clone", "stage": self.stage if st == "finishing" else "", "result": self.result, "outlook": None, "image": self.plan["image"],
                      "dest_name": self.plan["dest_drive"]["name"], "dest_size_text": self.plan["dest_drive"]["size_text"]})
         return snap

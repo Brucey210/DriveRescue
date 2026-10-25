@@ -47,7 +47,8 @@ class AppCase(unittest.TestCase):
 class ActionTests(AppCase):
     def test_clean_opts_clamps(self):
         o = server.clean_opts({"style": "evil", "retries": 999, "direction": "x"})
-        self.assertEqual(o, {"style": "gentle", "retries": 10, "direction": "forward", "pause_after_quick": False})
+        self.assertEqual(o, {"style": "gentle", "retries": 10, "direction": "forward", "pause_after_quick": False,
+                             "thorough": False})
         self.assertTrue(server.clean_opts({"pause_after_quick": True})["pause_after_quick"])
         self.assertFalse(server.clean_opts({"pause_after_quick": "yes"})["pause_after_quick"])
         self.assertEqual(server.clean_opts("junk")["retries"], 3)
@@ -102,6 +103,43 @@ class ActionTests(AppCase):
         self.assertTrue(os.path.exists(s["image"]))
         with self.assertRaises(server.ApiError):
             self.call("GET", "recover/list", query={"volume": ["0"]})
+
+    def test_the_session_log_records_what_happened_and_goes_in_the_report(self):
+        self.call("POST", "start", {"source": self.src, "dest": self.dst, "folder": "DR"})
+        s = self.wait_done()
+        text = self.call("GET", "log")["text"]
+        self.assertIn("Rescue copy confirmed", text)
+        self.assertIn("Now done", text)
+        self.assertIn("SESSION LOG", self.call("GET", "report")["text"])
+        self.assertTrue(os.path.exists(os.path.join(os.path.dirname(s["image"]), "DriveRescue-session.log")))
+
+    def test_choosing_more_than_will_fit_is_refused_with_numbers(self):
+        from drive_rescue.recover import Recovery
+        rec = Recovery(self.sys, "x.img", self.sys.root)
+        root = os.path.join(self.sys.root, "fakevol")
+        os.makedirs(os.path.join(root, "d"))
+        with open(os.path.join(root, "d", "big.bin"), "wb") as fh:
+            fh.write(b"x" * 100_000)
+        rec.volumes = [{"id": "0", "name": "V", "mountpoint": root}]
+        self.assertEqual(rec.estimate([{"volume": "0", "rel": "d"}]), 100_000)
+        self.sys.free_bytes = lambda path: 1000
+        with self.assertRaises(server.ApiError) as cm:
+            self.app._check_room(rec, [{"volume": "0", "rel": "d"}], None)
+        self.assertIn("isn't enough room", str(cm.exception))
+        self.sys.free_bytes = lambda path: 10 ** 12
+        self.app._check_room(rec, [{"volume": "0", "rel": "d"}], None)
+
+    def test_the_plan_comes_with_a_checklist_and_the_read_test_works(self):
+        plan = self.call("POST", "plan", {"source": self.src, "dest": self.dst, "folder": "DR"})
+        self.assertTrue(plan["ok"])
+        self.assertTrue(all(i["ok"] for i in plan["checklist"]), plan["checklist"])
+        self.sys.power_state = {"on_battery": True, "percent": 20}
+        plan = self.call("POST", "plan", {"source": self.src, "dest": self.dst, "folder": "DR"})
+        self.assertTrue(any(not i["ok"] and "battery" in i["text"] for i in plan["checklist"]))
+        result = self.call("GET", "assess", query={"path": [self.src]})
+        self.assertEqual(result["rating"], "good")
+        with self.assertRaises(server.ApiError):
+            self.call("GET", "assess", query={"path": ["/dev/nothing"]})
 
     def test_recover_input_checks(self):
         with self.assertRaises(server.ApiError):
@@ -192,6 +230,22 @@ class PowerTests(AppCase):
             self.call("POST", "system/power", {"action": "poweroff"})
         self.assertEqual(cm.exception.status, 403)
         self.assertEqual(self.sys.power_calls, [])
+
+    def test_desktop_only_on_the_boot_disc_and_closes_the_window(self):
+        import tempfile
+        flag = os.path.join(tempfile.mkdtemp(), "flag")
+        old, server.DESKTOP_FLAG = server.DESKTOP_FLAG, flag
+        try:
+            with self.assertRaises(server.ApiError) as cm:
+                self.call("POST", "system/desktop", {})
+            self.assertEqual(cm.exception.status, 403)
+            self.assertFalse(os.path.exists(flag))
+            os.environ["DRIVE_RESCUE_ALLOW_POWER"] = "1"
+            self.call("POST", "system/desktop", {})
+            self.assertTrue(os.path.exists(flag))
+            self.assertTrue(self.sys.kiosk_closed)
+        finally:
+            server.DESKTOP_FLAG = old
 
     def test_allowed_on_the_boot_disc_but_not_during_a_copy(self):
         os.environ["DRIVE_RESCUE_ALLOW_POWER"] = "1"
