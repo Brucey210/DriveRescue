@@ -89,6 +89,9 @@ cat > "$WORK/root/etc/issue" <<'ISSUE'
 
 ISSUE
 rm -f "$WORK/root/etc/motd"
+# The computer's own name shows on the login line and in terminal windows.
+echo driverescue > "$WORK/root/etc/hostname"
+[ -f "$WORK/root/etc/hosts" ] && sed -i 's/sysrescue/driverescue/g' "$WORK/root/etc/hosts" || true
 # Desktop wallpaper: every stock wallpaper becomes the Drive Rescue one, and the desktop is told to use it.
 mkdir -p "$WORK/root/usr/share/backgrounds/drive-rescue"
 cp "$BRAND/wallpaper-1920x1080.png" "$WORK/root/usr/share/backgrounds/drive-rescue/wallpaper.png"
