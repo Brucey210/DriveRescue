@@ -45,6 +45,40 @@ jobs:
       - name: Build the ISO
         run: sudo bash iso/build-iso.sh base.iso DriveRescue.iso
 
+      - name: Boot it in a virtual machine and look at the screen
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          sudo apt-get install -y qemu-system-x86 ovmf tesseract-ocr python3-pil
+          mkdir -p boot-shots
+          fail=0
+          for mode in bios uefi; do
+            python3 tests/boot_test.py DriveRescue.iso $mode boot-shots > boot-$mode.json 2> boot-$mode.err
+            rc=$?
+            [ $rc -ne 0 ] && fail=1
+            python3 - "$mode" "$rc" <<'PY'
+          import json, sys
+          mode, rc = sys.argv[1], int(sys.argv[2])
+          try:
+              r = json.load(open(f"boot-{mode}.json"))
+              last = (r.get("shots") or [{}])[-1].get("text", "")
+              msg = f"{mode.upper()}: {'PASSED' if rc == 0 else 'FAILED'}. Found the first screen: {r.get('found')}. Unwanted words seen: {r.get('forbidden')}. KVM: {r.get('kvm')}. Last screen text: {last} {r.get('error', '')}"
+          except Exception as e:
+              msg = f"{mode.upper()}: could not run the check ({e}) " + open(f"boot-{mode}.err").read()[-300:]
+          print("::" + ("notice" if rc == 0 else "error") + " title=Boot test::" + msg.replace("%", "%25").replace("\n", " "))
+          PY
+          done
+          exit $fail
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: boot-screenshots
+          path: boot-shots
+          retention-days: 14
+          if-no-files-found: ignore
+
       - uses: actions/upload-artifact@v4
         with:
           name: DriveRescue-iso
