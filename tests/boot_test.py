@@ -18,7 +18,7 @@ import sys
 import tempfile
 import time
 
-FORBIDDEN = ("systemrescue", "system-rescue", "system rescue", "boot systemrescue", "memtest", "copytoram")
+FORBIDDEN = ("sysrescue", "systemrescue", "system-rescue", "system rescue", "boot systemrescue", "memtest", "copytoram")
 WANTED = ("what would you like to do", "rescue files from a failing drive")
 
 

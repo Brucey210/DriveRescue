@@ -134,7 +134,10 @@ global:
 YAML
 # One silent boot entry: no menu, no choices, straight into Drive Rescue (graphical only).
 # "Esc" (UEFI) or "Shift" (BIOS) still reaches a safe-graphics entry for computers that show nothing.
-CMDLINE="archisobasedir=sysresccd archisolabel=RESCUE1302 iomem=relaxed quiet loglevel=0 vt.global_cursor_default=0 systemd.show_status=0 rd.udev.log_level=0"
+BASEARGS="archisobasedir=sysresccd archisolabel=RESCUE1302 iomem=relaxed"
+# console=tty3 sends the start-up messages to a screen nobody is looking at, so the person sees the
+# splash and then Drive Rescue, not lines of text from the system underneath.
+CMDLINE="$BASEARGS quiet loglevel=0 vt.global_cursor_default=0 systemd.show_status=0 rd.udev.log_level=0 console=tty3"
 mkdir -p "$WORK/iso_add/boot/grub" "$WORK/iso_add/syslinux"
 cat > "$WORK/iso_add/boot/grub/grubsrcd.cfg" <<GRUB
 set timeout=0
@@ -157,7 +160,7 @@ menuentry 'Drive Rescue' {
 	initrd /sysresccd/boot/intel_ucode.img /sysresccd/boot/amd_ucode.img /sysresccd/boot/x86_64/sysresccd.img
 }
 menuentry 'Drive Rescue (safe graphics)' {
-	linux /sysresccd/boot/x86_64/vmlinuz $CMDLINE nomodeset
+	linux /sysresccd/boot/x86_64/vmlinuz $BASEARGS nomodeset
 	initrd /sysresccd/boot/intel_ucode.img /sysresccd/boot/amd_ucode.img /sysresccd/boot/x86_64/sysresccd.img
 }
 GRUB
@@ -188,7 +191,7 @@ LABEL safe
 MENU LABEL Drive Rescue (safe graphics)
 LINUX boot/x86_64/vmlinuz
 INITRD boot/intel_ucode.img,boot/amd_ucode.img,boot/x86_64/sysresccd.img
-APPEND $CMDLINE nomodeset
+APPEND $BASEARGS nomodeset
 SYS
 cp "$BRAND/splash-1024x768.png" "$WORK/iso_add/boot/grub/splash.png"
 cp "$BRAND/splash-640x480.png" "$WORK/iso_add/syslinux/splash.png"

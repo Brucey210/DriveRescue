@@ -62,7 +62,7 @@ jobs:
           mode, rc = sys.argv[1], int(sys.argv[2])
           try:
               r = json.load(open(f"boot-{mode}.json"))
-              last = (r.get("shots") or [{}])[-1].get("text", "")
+              last = " | ".join(f"[{x['t']}s] {x['text'][:110]}" for x in (r.get("shots") or [])[:12])
               msg = f"{mode.upper()}: {'PASSED' if rc == 0 else 'FAILED'}. Found the first screen: {r.get('found')}. Unwanted words seen: {r.get('forbidden')}. KVM: {r.get('kvm')}. Last screen text: {last} {r.get('error', '')}"
           except Exception as e:
               msg = f"{mode.upper()}: could not run the check ({e}) " + open(f"boot-{mode}.err").read()[-300:]
