@@ -65,6 +65,7 @@ def organize(outdir, cancelled=lambda: False):
         except OSError:
             continue
     for size, paths in sorted(by_size.items()):
+        paths = sorted(paths)  # the same answer every time, whatever order the disk lists things in
         for path in paths:
             if cancelled():
                 return summary
